@@ -114,7 +114,8 @@
    (def/stx c2 (dispatch-peg-compile #'e2 in #'ix #'ln #'col))
    #'(let-values ([(ix ln col res) c1])
        (if ix
-           c2
+           (let-values ([(ix ln col res) c2])
+             (values ix ln col (void)))
            (values ix ln col (void))))])
 
 (define-syntax/generics (-* e)
