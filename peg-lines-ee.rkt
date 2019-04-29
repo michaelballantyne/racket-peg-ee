@@ -145,7 +145,7 @@
   [(peg-expand)
    (define ctx (make-def-ctx))
    (def/stx n^ (bind! ctx #'n #'(parser #f)))
-   (define-values (e^ ve) (dispatch-peg-expand #'e))
+   (define-values (e^ ve) (dispatch-peg-expand #'e ctx))
    (define-values (b^ vb) (dispatch-peg-expand #'b ctx))
    (define v (map (lambda (vb) (internal-definition-context-introduce
                                 ctx vb 'remove)) vb))
