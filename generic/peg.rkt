@@ -191,7 +191,9 @@
        (raise-syntax-error #f "not a peg non-terminal" #'nonterm))
      (def/stx f (syntax-local-introduce (parser-f #'nonterm)))
      #'(let-values ([(in res) (f in-e)])
-         res)]))
+         (if (failure? in)
+             (error 'parse "parse failed")
+             res))]))
 
 (define-syntax-rule
   (define-peg-macro name rhs)
