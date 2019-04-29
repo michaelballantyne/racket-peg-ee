@@ -1,6 +1,11 @@
 #lang racket
 
-(provide define-peg parse -eps -char -or -seq -* -! -local define-peg-macro -+)
+(provide
+ define-peg parse
+ -eps -char -string -char-pred -any-char -char-range -or -seq -* -! -& -local
+ define-peg-macro
+ define-simple-peg-macro
+ -+)
 
 (require
   racket/performance-hint
@@ -12,22 +17,34 @@
    (rename-in syntax/parse [define/syntax-parse def/stx])))
 
 (begin-encourage-inline
-  (define (advance-input-1 c ix ln col)
-    (if c
+  (define (step-input c ix ln col)
+    (if (char=? c #\newline)
         (values (+ ix 1)
                 (+ ln 1)
                 0)
         (values (+ ix 1)
                 ln
                 (+ col 1))))
-  
-  (define (char-rt in ix ln col c)
+
+  (define (char-pred-rt in ix ln col p)
     (if (< ix (string-length in))
-        (let ([c2 (string-ref in ix)])
-          (if (char=? c2 c)
-              (advance-input-1 c2 ix ln col)
+        (let ([c (string-ref in ix)])
+          (if (p c)
+              (step-input c ix ln col)
               (values #f ln col)))
-        (values #f ln col))))
+        (values #f ln col)))
+
+  (define (string-rt in ix ln col s)
+      (if (<= (+ ix (string-length s)) (string-length in))
+          (let loop ([ix ix] [ln ln] [col col] [s-ix 0])
+            (if (< s-ix (string-length s))
+                (let ([c (string-ref in ix)])
+                  (if (char=? c (string-ref s s-ix))
+                      (let-values ([(ix ln col) (step-input c ix ln col)])
+                        (loop ix ln col (+ s-ix 1)))
+                      (values #f ln col)))
+                (values ix ln col)))
+          (values #f ln col))))
 
 (begin-for-syntax
   (define-syntax-generic parser-f)
@@ -51,10 +68,9 @@
       [_ #:when (peg-macro? e)
          (dispatch-peg-expand
           (apply-as-transformer peg-macro 'expression ctx e))]
-      [nonterm:id
-       #:when (parser-f? #'nonterm ctx)
-       (dispatch-peg-expand
-        #'(#%peg-call nonterm) ctx)])))
+      [s:string (dispatch-peg-expand #'(-string s) ctx)]
+      [c:char (dispatch-peg-expand #'(-char c) ctx)]
+      [nonterm:id (dispatch-peg-expand #'(#%peg-call nonterm) ctx)])))
 
 (define-syntax -eps
   (generics/parse -eps
@@ -62,10 +78,15 @@
     [(peg-compile in ix ln col)
      #`(values #,ix #,ln #,col)]))
 
-(define-syntax/generics (-char c:char)
+(define-syntax/generics (-char-pred p)
   [(peg-expand) this-syntax]
   [(peg-compile in ix ln col)
-   #`(char-rt #,in #,ix #,ln #,col c)])
+   #`(char-pred-rt #,in #,ix #,ln #,col p)])
+
+(define-syntax/generics (-string s:string)
+  [(peg-expand) this-syntax]
+  [(peg-compile in ix ln col)
+   #`(string-rt #,in #,ix #,ln #,col s)])
 
 (define-syntax/generics (-or e1 e2)
   [(peg-expand)
@@ -106,8 +127,17 @@
                          (values ix ln col))))])
        (f #,ix #,ln #,col))])
 
-(define-syntax -! #f)
-
+(define-syntax/generics (-! e)
+  [(peg-expand)
+   (def/stx e^ (dispatch-peg-expand #'e))
+   (qstx/rc (-! e^))]
+  [(peg-compile in ix ln col)
+   (def/stx c (dispatch-peg-compile #'e in ix ln col))
+   #`(let-values ([(ix ln col) c])
+       (if ix
+           (values #f ln col)
+           (values #,ix #,ln #,col)))])
+   
 (define-syntax/generics (-local ([n e]) b)
   [(peg-expand)
    (define ctx (make-def-ctx))
@@ -153,10 +183,50 @@
      (def/stx f (syntax-local-introduce (parser-f #'nonterm)))
      #'(f str-e 0 0 0)]))
 
-(define-syntax-rule (define-peg-macro name rhs)
+(define-syntax-rule
+  (define-peg-macro name rhs)
   (define-syntax name (generics [peg-macro rhs])))
 
-(define-peg-macro -+
-  (syntax-parser
-    [(_ e) #'(-local ([tmp e])
-               (-seq tmp (-* tmp)))]))
+(require (for-syntax syntax/parse/private/sc))
+
+(begin-for-syntax
+  (define-syntax-class head
+    (pattern (name:id . rest)
+             #:attr pat #'((~var name id) . rest))
+    (pattern name:id
+             #:attr pat #'(~var name id))))
+
+(define-syntax (define-simple-peg-macro stx)
+  (syntax-parse stx
+    [(_ h:head . body)
+     #`(define-peg-macro h.name
+         (syntax-parser/template
+          #,((make-syntax-introducer) stx)
+          [h.pat . body]))]))
+
+
+; bad implementation! consumes linear stack due to `or`.
+#;(provide -*2)
+#;(define-simple-peg-macro
+    (-*2 e)
+    (-local ([tmp2 (-or (-seq e tmp2) -eps)]) tmp2))
+
+(define-simple-peg-macro
+  (-char c:char)
+  (-char-pred (lambda (v) (char=? c v))))
+
+(define-simple-peg-macro
+  -any-char
+  (-char-pred (lambda (v) #t)))
+
+(define-simple-peg-macro
+  (-char-range c1:char c2:char)
+  (-char-pred (lambda (v) (and (char>=? v c1) (char<=? v c2)))))
+
+(define-simple-peg-macro
+  (-& e)
+  (-! (-! e)))
+
+(define-simple-peg-macro
+  (-+ e)
+  (-local ([tmp e]) (-seq tmp (-* tmp))))
