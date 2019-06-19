@@ -6,10 +6,11 @@
   racket/undefined
   racket/performance-hint
   
-  syntax-generic2/define
+  ee-lib/define
   (for-syntax
    racket/syntax
-   syntax-generic2
+   racket/generic
+   ee-lib
    (rename-in syntax/parse [define/syntax-parse def/stx])))
 
 ; Runtime
@@ -72,21 +73,31 @@
 (require (for-syntax syntax/id-table))
 
 (begin-for-syntax
-  (define-syntax-generic peg-macro)
-  (define-syntax-generic parser)
+  (define-generics peg-macro
+    (peg-macro-transform peg-macro stx))
+  (struct peg-macro-rep (procedure)
+    #:methods gen:peg-macro
+    [(define (peg-macro-transform s stx)
+       ((peg-macro-rep s) stx))])
+  
+  (define-generics parser-binding)
+  (struct parser-binding-rep ()
+    #:methods gen:parser-binding [])
+  
 
   (define compiled-ids (make-free-id-table))
 
-  (define/hygienic (expand-peg stx)
+  (define/hygienic (expand-peg stx) #:expression
     (syntax-parse stx
       #:literal-sets (peg-literals)
       [c:char (expand-peg #'(-char c))]
 
       ; Macro
       [(head . rest)
-       #:when (peg-macro? stx)
+       #:do [(define binding (lookup #'head))]
+       #:when (peg-macro? binding)
        (expand-peg
-        (peg-macro stx))]
+        (peg-macro-transform binding stx))]
       
       ; Core forms
       [-eps this-syntax]
@@ -102,19 +113,19 @@
       [(-local [g e]
                b)
        (define sc (make-scope))
-       (def/stx g^ (bind! (add-scope #'g sc) #'(generics [parser (lambda (stx) stx)])))
+       (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
        (def/stx e^ (expand-peg (add-scope #'e sc)))
        (def/stx b^ (expand-peg (add-scope #'b sc)))
        (qstx/rc
         (-local [g^ e^]
                 b^))]
       [name:id
-       (when (not (parser? #'name))
+       (when (not (parser-binding? (lookup #'name)))
          (raise-syntax-error #f "not bound as a peg" #'name))
        this-syntax]
       ))
 
-  (define/hygienic (compile stx in)
+  (define/hygienic (compile stx in) #:expression
     (syntax-parse stx
       #:literal-sets (peg-literals)
       [-eps
@@ -161,7 +172,7 @@
     [(_ name peg-e)
      #'(begin
          (define runtime (peg-body peg-e))
-         (define-syntax name (generics [parser (lambda (stx) stx)]))
+         (define-syntax name (parser-binding-rep))
          (begin-for-syntax
            ; syntax-local-introduce not necessary because this doesn't
            ; run within a macro.
@@ -175,4 +186,4 @@
 
 (define-syntax-rule
   (define-peg-macro name proc)
-  (define-syntax name (generics [peg-macro proc])))
+  (define-syntax name (parser-macro-rep proc)))
