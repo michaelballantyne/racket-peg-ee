@@ -1,8 +1,7 @@
 #lang racket
 
-(provide define-peg parse -eps -seq -char-pred -or -* -local -action -bind
-         define-peg-macro define-simple-peg-macro
-         -char -any-char -char-range -string -capture)
+(provide define-peg parse -eps -seq -char-pred -or -* -local define-peg-macro
+         define-simple-peg-macro -char -any-char -char-range)
 
 (require
   racket/undefined
@@ -71,11 +70,7 @@
    -seq
    -or
    -*
-   -local
-   -action
-   -bind
-   -string
-   -capture))
+   -local))
 
 (require (for-syntax syntax/id-table))
 
@@ -98,7 +93,6 @@
     (syntax-parse stx
       #:literal-sets (peg-literals)
       [c:char (expand-peg #'(-char c))]
-      [s:string (expand-peg #'(-string s))]
 
       ; Macro
       [(~or head:id (head . rest))
@@ -108,49 +102,33 @@
         (peg-macro-transform binding stx))]
       
       ; Core forms
-      [-eps (values this-syntax '())]
-      [(-char-pred p) (values this-syntax '())]
+      [-eps this-syntax]
+      [(-char-pred p) this-syntax]
       [(-seq e1 e2)
-       (define-values (e1^ v1) (expand-peg #'e1))
-       (define-values (e2^ v2) (expand-peg #'e2))
-       (values (qstx/rc (-seq #,e1^ #,e2^)) (append v1 v2))]
+       (def/stx e1^ (expand-peg #'e1))
+       (def/stx e2^ (expand-peg #'e2))
+       (qstx/rc (-seq e1^ e2^))]
       [(-or e1 e2)
-       (define-values (e1^ v1) (expand-peg #'e1))
-       (define-values (e2^ v2) (expand-peg #'e2))
-       (values (qstx/rc (-or #,e1^ #,e2^)) (append v1 v2))]
+       (def/stx e1^ (expand-peg #'e1))
+       (def/stx e2^ (expand-peg #'e2))
+       (qstx/rc (-or e1^ e2^))]
       [(-* e)
-       (define-values (e^ vs) (expand-peg #'e))
-       (values (qstx/rc (-* #,e^)) '())]
+       (def/stx e^ (expand-peg #'e))
+       (qstx/rc (-* e^))]
       [(-local ([g:id e])
                b)
-       (with-scope sc
-         (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
-         (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
-         (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
-
-         (define vb^ (for/list ([v vb])
-                       (remove-scope
-                        (internal-definition-context-introduce
-                         (current-def-ctx) v 'remove)
-                        sc)))
-         (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))]
+       (define sc (make-scope))
+       (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
+       (def/stx e^ (expand-peg (add-scope #'e sc)))
+       (def/stx b^ (expand-peg (add-scope #'b sc)))
+       (qstx/rc
+        (-local [g^ e^]
+                b^))]
       [name:id
        (when (not (parser-binding? (lookup #'name)))
          (raise-syntax-error #f "not bound as a peg" #'name))
-       (values this-syntax '())]
-      [(-action pe e)
-       (define-values (pe^ v) (expand-peg #'pe))
-       (values (qstx/rc (-action #,pe^ e)) '())]
-      [(-bind x:id e)
-       (define-values (e^ v) (expand-peg #'e))
-       (values
-        (qstx/rc (-bind x #,e^))
-        (cons (syntax-local-introduce #'x) v))]
-      [(-string s:string)
-       (values this-syntax '())]
-      [(-capture e)
-       (define-values (e^ v) (expand-peg #'e))
-       (values (qstx/rc (-capture #,e^)) v)]))
+       this-syntax]
+      ))
 
   (define/hygienic (compile stx in) #:expression
     (syntax-parse stx
@@ -192,37 +170,13 @@
       [name:id
        (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids #'name)))
        #`(f #,in)]
-      [(-action pe e)
-       (define-values (_ vs) (expand-peg #'pe))
-       (def/stx c (compile #'pe in))
-       (def/stx (v ...) (map syntax-local-introduce vs))
-       #'(let ([v undefined] ...)
-           (let-values ([(in _) c])
-             (if (failure? in)
-                 (fail)
-                 (let ([res e])
-                   (values in res)))))]
-      [(-bind x e)
-       (def/stx c (compile #'e in))
-       #'(let-values ([(in res) c])
-           (if (failure? in)
-               (fail)
-               (begin
-                 (set! x res)
-                 (values in res))))]
-      [(-string s:string)
-       #`(string-rt #,in s)]
-      [(-capture e)
-       (def/stx c (compile #'e in))
-       #`(let-values ([(in res) c])
-           (values in (substring (text-str #,in) (text-ix #,in) (text-ix in))))]
       )))
 
 (define-syntax peg-body
   (syntax-parser
     [(_ peg-e)
-     (define-values (peg-e^ vs) (expand-peg #'peg-e))
-     (def/stx compiled-e (compile peg-e^ #'in))
+     (define expanded-e (expand-peg #'peg-e))
+     (def/stx compiled-e (compile expanded-e #'in))
      #'(lambda (in)
          compiled-e)]))
 

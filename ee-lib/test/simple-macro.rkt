@@ -9,10 +9,10 @@
           (-seq (-* (-seq (-! tmp) e1)) tmp)))
 
 (define-simple-peg-macro
-    (-many-until2 many-e until-e)
-    (-local ([until until-e])
-            (-local ([rec (-or until (-seq many-e rec))])
-                    rec)))
+  (-many-until2 many-e until-e)
+  (-local ([until until-e])
+          (-local ([rec (-or until (-seq many-e rec))])
+                  rec)))
 
 
 (define-peg comment
@@ -24,5 +24,5 @@
    c))
 
 (check-equal?
- (parse t (make-text "before; a b c\nafter"))
+ (parse t "before; a b c\nafter")
  "; a b c\n")
