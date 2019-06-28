@@ -30,8 +30,13 @@
    #`(let ([in (sequence #,in)])
        c)])
 
-(define-peg l
-  (-action (-list-of (-seq (-bind a (-lit "a")) (-lit "b")))
-           a))
+(module+ test
+  (require rackunit)
+  
+  (define-peg l
+    (-action (-list-of (-seq (-bind a (-lit "a")) (-lit "b")))
+             a))
 
-(parse l (list "a" "b"))
+  (check-equal?
+   (parse l (list "a" "b"))
+   "a"))

@@ -1,6 +1,7 @@
 #lang racket
 
-(provide define-peg parse -eps -seq -char -or -local define-peg-macro)
+(provide define-peg parse -eps -seq -char-pred -or -* -local define-peg-macro
+         define-simple-peg-macro -char -any-char -char-range)
 
 (require
   racket/undefined
@@ -65,9 +66,10 @@
   peg-literals
   "peg forms cannot be used as racket expressions"
   (-eps
-   -char
+   -char-pred
    -seq
    -or
+   -*
    -local))
 
 (require (for-syntax syntax/id-table))
@@ -78,7 +80,7 @@
   (struct peg-macro-rep (procedure)
     #:methods gen:peg-macro
     [(define (peg-macro-transform s stx)
-       ((peg-macro-rep s) stx))])
+       ((peg-macro-rep-procedure s) stx))])
   
   (define-generics parser-binding)
   (struct parser-binding-rep ()
@@ -93,7 +95,7 @@
       [c:char (expand-peg #'(-char c))]
 
       ; Macro
-      [(head . rest)
+      [(~or head:id (head . rest))
        #:do [(define binding (lookup #'head))]
        #:when (peg-macro? binding)
        (expand-peg
@@ -101,7 +103,7 @@
       
       ; Core forms
       [-eps this-syntax]
-      [(-char c:char) this-syntax]
+      [(-char-pred p) this-syntax]
       [(-seq e1 e2)
        (def/stx e1^ (expand-peg #'e1))
        (def/stx e2^ (expand-peg #'e2))
@@ -110,7 +112,10 @@
        (def/stx e1^ (expand-peg #'e1))
        (def/stx e2^ (expand-peg #'e2))
        (qstx/rc (-or e1^ e2^))]
-      [(-local [g e]
+      [(-* e)
+       (def/stx e^ (expand-peg #'e))
+       (qstx/rc (-* e^))]
+      [(-local ([g:id e])
                b)
        (define sc (make-scope))
        (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
@@ -144,8 +149,16 @@
            (if (failure? in^)
                c2
                (values in^ res)))]
-      [(-char c:char)
-       #`(char-pred-rt #,in (lambda (v) (eqv? c v)))]
+      [(-* e)
+       (def/stx c (compile #'e #'in))
+       #`(letrec ([f (lambda (in)
+                       (let-values ([(in^ res^) c])
+                         (if (failure? in^)
+                             (values in (void))
+                             (f in^))))])
+           (f #,in))]
+      [(-char-pred p)
+       #`(char-pred-rt #,in p)]
       [(-local [g e]
                b)
        (free-id-table-set! compiled-ids #'g (syntax-local-introduce #'f))
@@ -182,8 +195,46 @@
   (syntax-parser
     [(_ peg-name str-e)
      (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids #'peg-name)))
-     #'(f (make-text str-e))]))
+     #'(let-values ([(in^ res) (f (make-text str-e))])
+         (if (failure? in^)
+             (error 'parse "parse failed")
+             res))]))
 
 (define-syntax-rule
   (define-peg-macro name proc)
-  (define-syntax name (parser-macro-rep proc)))
+  (define-syntax name (peg-macro-rep proc)))
+
+(require (for-syntax syntax/parse/private/sc))
+
+(begin-for-syntax
+  (define-syntax-class head
+    (pattern (name:id . rest)
+             #:attr pat #'((~var name id) . rest))
+    (pattern name:id
+             #:attr pat #'(~var name id))))
+
+(define-syntax (define-simple-peg-macro stx)
+  (syntax-parse stx
+    [(_ h:head . body)
+     #`(define-peg-macro h.name
+         (syntax-parser/template
+          #,((make-syntax-introducer) stx)
+          [h.pat . body]))]))
+
+(define-simple-peg-macro
+  (-char c:char)
+  (-char-pred (lambda (v) (char=? c v))))
+
+(define-peg-macro #%peg-datum
+  (syntax-parser
+    [(_ c:char) #'(-char c)]
+    [(_ s:string) #'(-string s)]))
+
+(define-simple-peg-macro
+  -any-char
+  (-char-pred (lambda (v) #t)))
+
+(define-simple-peg-macro
+  (-char-range c1:char c2:char)
+  (-char-pred (lambda (v) (and (char>=? v c1) (char<=? v c2)))))
+

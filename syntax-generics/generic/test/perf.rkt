@@ -1,9 +1,8 @@
 #lang racket
 
-(require "peg.rkt" "text.rkt")
+(require "../peg.rkt" "../text.rkt")
 
 (define-peg ab
-  #;"ab"
   (-seq (-char #\a) (-char #\b)))
 
 (define-peg ab+

@@ -1,9 +1,8 @@
 #lang racket
 
-(require "peg-lines-ee.rkt")
+(require "../peg.rkt")
 
 (define-peg ab
-  #;"ab"
   (-seq (-char #\a) (-char #\b)))
 
 (define-peg ab+

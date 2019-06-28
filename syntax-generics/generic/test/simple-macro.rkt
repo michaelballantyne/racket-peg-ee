@@ -1,7 +1,8 @@
 #lang racket
 
-(require "peg-lines-ee.rkt"
-         (for-syntax syntax/parse))
+(require "../peg.rkt"
+         "../text.rkt"
+         rackunit)
 
 (define-simple-peg-macro
   (-many-until e1 e2)
@@ -23,4 +24,6 @@
    (-seq "before" (-seq (-bind c (-capture comment)) "after"))
    c))
 
-(parse t "before; a b c\nafter")
+(check-equal?
+ (parse t (make-text "before; a b c\nafter"))
+ "; a b c\n")
