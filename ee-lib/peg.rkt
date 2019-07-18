@@ -127,12 +127,8 @@
          (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
          (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
          (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
-
          (define vb^ (for/list ([v vb])
-                       (remove-scope
-                        (internal-definition-context-introduce
-                         (current-def-ctx) v 'remove)
-                        sc)))
+                       (splice-from-scope v sc)))
          (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))]
       [name:id
        (when (not (parser-binding? (lookup #'name)))
