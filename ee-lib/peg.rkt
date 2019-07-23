@@ -5,8 +5,10 @@
          -char -any-char -char-range -string -capture -eof
          -+
          (rename-out [#%peg-var-with-: #%peg-var])
+         (rename-out [-action =>])
          #%peg-datum
-         (struct-out parse-result))
+         (struct-out parse-result)
+         -many-until -?)
 
 (require
   racket/undefined
@@ -255,13 +257,23 @@
       #'(lambda (in)
           compiled-e))]))
 
-(define-syntax define-peg-core
+(define-syntax begin-for-syntax/maybe-expr
+  (syntax-parser
+    [(_ e)
+     (if (eq? 'module (syntax-local-context))
+         #'(begin-for-syntax e)
+         #'(begin
+             (define-syntax m (lambda (stx) e #'(void)))
+             (m))
+         )]))
+
+(define-syntax define-peg
   (syntax-parser
     [(_ name peg-e)
      #'(begin
          (define runtime (peg-body peg-e))
          (define-syntax name (parser-binding-rep))
-         (begin-for-syntax
+         (begin-for-syntax/maybe-expr
            ; syntax-local-introduce not necessary because this doesn't
            ; run within a macro.
            (free-id-table-set! compiled-ids #'name #'runtime)))]))
@@ -315,13 +327,13 @@
   (-char-range c1:char c2:char)
   (-char-pred (lambda (v) (and (char>=? v c1) (char<=? v c2)))))
 
-(define-peg-macro -seq*
+(define-peg-macro -seq
   (syntax-parser
     [(_ e) #'e]
     [(_ e1 e* ...)
      #'(-seq2 e1 (-seq e* ...))]))
 
-(define-peg-macro -seq
+#;(define-peg-macro -seq
   (syntax-parser
     #:datum-literals (=>)
     [(_ p ... => e)
@@ -339,7 +351,7 @@
 
 (define-simple-peg-macro (-+ e) (-local [t e] (-seq t (-* t))))
 
-(define-syntax define-peg
+#;(define-syntax define-peg
   (syntax-parser
     #:datum-literals (=>)
     [(_ name:id p => e)
@@ -364,3 +376,19 @@
         #`(-bind #,(format-id #'n "~a" binder)
                  (#%peg-var #,(format-id #'n "~a" peg)))]
        [_ (raise-syntax-error #f "id may not have more than one `:`" #'n)])]))
+
+(define-simple-peg-macro
+  (-many-until e1 e2)
+  (-seq (-* (-seq (-! e2) e1))))
+
+(define-simple-peg-macro
+  (-? e)
+  (-or e -eps))
+
+; TODO:
+; * parsing of token streams (hence the generic approach with `text`)
+; * -capture could check there's no return val; -bind could check there is one. perf, though
+; * (maybe) optimization to table-based dispatch of -or. All syntax bindings, so can inline, etc.
+; * abstract over begin-for-syntax/expression pattern, perhaps at the level of the symbol table
+;    pattern. Maybe my paper should discuss some of these as patterns...
+; * need info about parse failures if it's to be of any real use

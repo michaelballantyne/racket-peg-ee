@@ -4,11 +4,6 @@
          rackunit)
 
 (define-simple-peg-macro
-  (-many-until e1 e2)
-  (-local ([tmp e2])
-          (-seq (-* (-seq (-! tmp) e1)) tmp)))
-
-(define-simple-peg-macro
   (-many-until2 many-e until-e)
   (-local ([until until-e])
           (-local ([rec (-or until (-seq many-e rec))])
