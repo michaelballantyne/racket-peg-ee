@@ -3,38 +3,45 @@
 (require "../peg.rkt"
          rackunit
          (for-syntax
+          racket/string
           syntax/parse
           syntax/stx))
 
-(define (lexer str)
+(define (compute-dedent new-level indent-stack)
+  (let loop ([s indent-stack]
+             [count 0])
+    (cond
+      [(< new-level (first s))
+       (loop (rest s) (+ 1 count))]
+      [(= new-level (first s))
+       (values s count)]
+      [(> new-level (first s))
+       (error 'lexer "inconsistent indention")])))
+
+(define (make-offsides-handler)
   (define indent-stack '(0))
   (define (current-indent) (first indent-stack))
-  (define (indent! new-level) (set! indent-stack (cons new-level indent-stack)) '((INDENT)))
-  (define (dedent! new-level)
-    (displayln new-level)
-    (displayln indent-stack)
-    (let loop ([s indent-stack]
-               [count 0])
-      (cond
-        [(< new-level (first s))
-         (loop (rest s) (+ 1 count))]
-        [(= new-level (first s))
-         (set! indent-stack s)
-         (make-list count '(DEDENT))]
-        [(> new-level (first s))
-         (error 'lexer "inconsistent indention")])))
-  (define (handle-indent! spaces)
+
+  (define (line-indent! spaces)
     (cond
       [(> spaces (current-indent))
-       (indent! spaces)]
+       (set! indent-stack (cons spaces indent-stack))
+       '((INDENT))]
       [(= spaces (current-indent))
        '()]
       [(< spaces (current-indent))
-       (dedent! spaces)]))
+       (define-values (new-stack dedent-count)
+         (compute-dedent spaces indent-stack))
+       (set! indent-stack new-stack)
+       (make-list dedent-count '(DEDENT))]))
+  line-indent!)
+  
+(define (lexer str)
+  (define line-indent! (make-offsides-handler))
+  
   (define (eof-dedent!)
-    (append (handle-indent! 0) '((ENDMARKER))))
+    (append (line-indent! 0) '((ENDMARKER))))
 
-    
   ; TODO: actual unicode!
   (define-peg Lu (-char-range #\A #\Z))
   (define-peg Ll (-char-range #\a #\z))
@@ -48,73 +55,127 @@
 
   (define-peg-macro -keywords
     (syntax-parser
-      [(_ k ...)
-       #:with (s ...) (stx-map (lambda (k) (datum->syntax #'here (symbol->string (syntax-e k))))
-                               #'(k ...))
+      [(_ ss)
+       #:with (s ...) (map (lambda (s) (datum->syntax #'here s))
+                           (string-split (syntax-e #'ss)))
        #'(-or (-string s) ...)]))
   
   (define-peg keyword
     (=> (-capture
          s
          (-keywords
-          False      await      else       import     pass
+          "False      await      else       import     pass
           None       break      except     in         raise
           True       class      finally    is         return
           and        continue   for        lambda     try
           as         def        from       nonlocal   while
           assert     del        global     not        with
-          async      elif       if         or         yield))
+          async      elif       if         or         yield"))
         `(KEYWORD ,(string->symbol s))))
+
+  (define-peg operator
+    (-keywords
+     "+       -       *       **      /       //      %      @
+      <<      >>      &       |       ^       ~
+      <       >       <=      >=      ==      !="))
+
+  (define-peg delimiter
+    (-keywords
+     "(       )       [       ]       {       }
+      ,       :       .       ;       @       =       ->
+      +=      -=      *=      /=      //=     %=      @=
+      &=      |=      ^=      >>=     <<=     **="))
+
+  (define-peg punctuation
+    (=> (-capture s (-or operator delimiter))
+        `(PUNCT ,s)))
 
   (define-peg nonzerodigit (-char-range #\1 #\9))
   (define-peg digit (-char-range #\0 #\9))
   
-  (define-peg integer (-or decinteger))
   (define-peg decinteger
-    (-or (-seq nonzerodigit (-* (-seq (-? #\_) digit)))
-         (-seq (-+ #\0) (-* (-seq (-? #\_) #\0))))) 
+    (=> (-capture s (-or (-seq nonzerodigit (-* (-seq (-? #\_) digit)))
+                         (-seq (-+ #\0) (-* (-seq (-? #\_) #\0)))))
+        `(LIT
+          ,(string->number
+            (list->string
+             (filter (lambda (c) (not (char=? c #\_))) (string->list s)))))))
+
+  (define-peg integer (-or decinteger))
+
+  (define-peg string-prefix
+    (-keywords "r u R U f F fr Fr fR Fr rf rF Rf RF")) ; TODO: meaning
+  (define-peg bytes-prefix
+    (-keywords "b B br Br bR BR rb rB Rb RB"))
   
-  (define-peg comment (-seq #\# (-many-until -any-char #\newline)))
+  (define-peg -ascii-char (-char-pred (lambda (c) (< (char->integer c) 128))))
+  
+  (define-peg string-escape-seq
+    (=> (-seq #\\ -any-char)
+        (error 'parse "escape sequences not supported yet"))) ; TODO
+
+  (define-peg (string-variant qt non-char char escape)
+    (-local [item (-or escape (-capture (-seq (-! non-char) char)))]
+            (=> (-seq qt (-bind chars (-*/list item)) qt)
+                chars)))
+  (define-peg (string-variants char esc)
+    (-or (string-variant #\' (-or #\\ #\newline #\') char esc)
+         (string-variant #\" (-or #\\ #\newline #\") char esc)
+         (string-variant (-seq #\' #\' #\') (-or #\\ (-seq #\' #\' #\')) char esc)
+         (string-variant (-seq #\" #\" #\") (-or #\\ (-seq #\" #\" #\")) char esc)))
+
+  (define-peg string
+    (=> (-seq
+         #; (-? string-prefix)  ; TODO
+         (-bind chars (-debug (string-variants -any-char string-escape-seq))))
+        `(LIT ,(apply string-append chars))))
+
+  (define-peg literal (-or integer string)) ; TODO: bytes, other numbers
+
+  (define-peg simple-token (-or keyword identifier literal punctuation))
 
   ; TODO: tabs
   (define-peg whitespace-char (-or #\space))
   (define-peg whitespace (-* whitespace-char))
 
+  (define-peg indent
+    (=> (-capture s whitespace)
+        ; TODO: Side-effect. Should I support effect backtracking?
+        (line-indent! (string-length s))))
+
   ; TODO: other line termination sequences
   (define-peg line-terminator (-or #\newline))
+  
+  (define-peg comment (-seq #\# (-many-until -any-char #\newline)))
 
   (define-peg blank-line (-seq whitespace (-? comment)))
-
-  ; TODO: a -case form could make the call to line-start a tail call.
+  
   (define-peg line-start
     (-or
-     (=> (-seq blank-line line-terminator rest:line-start)
-         rest)
-     (=> (-seq blank-line -eof)
+     (=> (-seq blank-line -eof)                      ; EOF with dedents
          (eof-dedent!))
-     (=> (-seq (-bind indent (=> (-capture s whitespace)
-                                 ; TODO: Side-effect. Should I support effect backtracking?
-                                 (handle-indent! (string-length s))))
-               rest:line-continue)
-         (append indent rest))))
+     
+     (-drop blank-line line-terminator / line-start) ; blank line
+     
+     (=> (-seq i:indent rest:line-continue)          ; normal line
+         (append i rest))))
 
   (define-peg line-continue
     (-or
-     (=> -eof                                          ; EOF with dedents
+     (=> -eof                                        ; EOF with dedents
          (cons '(NEWLINE) (eof-dedent!)))
-     (=> (-seq (-? comment) line-terminator rest:line-start) ; newline, maybe after comment
+     (=> (-seq line-terminator rest:line-start)      ; newline
          (cons '(NEWLINE) rest))
-     (=> (-seq #\\ line-terminator rest:line-continue) ; line continuation
-         rest)
-     (=> (-seq whitespace-char rest:line-continue)     ; between-token whitespace
-         rest)
-     (=> (-seq k:keyword rest:line-continue)           ; keywords (before ids to override)
-         (cons k rest))
-     (=> (-seq id:identifier rest:line-continue)       ; identifier
-         (cons id rest))
-     ))
+     
+     (-drop comment / line-continue)                 ; comment
+     (-drop #\\ line-terminator / line-continue)     ; line continuation
+     (-drop whitespace-char / line-continue)         ; between-token whitespace
+
+     (=> (-seq t:simple-token rest:line-continue)    ; simple tokens
+         (cons t rest))))
 
   (parse line-start str))
+
 
 (lexer
  #<<here
@@ -123,8 +184,7 @@
   bar baz
  baz False
  # foo
+'foo'
+1_1 + 3,
 here
  )
-
-; In general the (-seq pattern rest) and (cons token rest) patterns mean
-; we're building up stack linear in program size.

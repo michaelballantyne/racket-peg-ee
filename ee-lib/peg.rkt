@@ -1,14 +1,14 @@
 #lang racket
 
-(provide define-peg parse -eps -seq -char-pred -or -* -local -action -bind -!
+(provide define-peg parse -eps -seq -char-pred -or -* -local -action -bind -! -debug
          define-peg-macro define-simple-peg-macro
-         -char -any-char -char-range -string -capture -eof
-         -+
+         -char -any-char -char-range -char-except
+         -string -capture -eof
+         -+ -? -drop -many-until -*/list
          (rename-out [#%peg-var-with-: #%peg-var])
          (rename-out [-action =>])
          #%peg-datum
-         (struct-out parse-result)
-         -many-until -?)
+         (struct-out parse-result))
 
 (require
   racket/undefined
@@ -82,9 +82,12 @@
    -or2
    -*
    -local
+   -let-peg-macro
    #%peg-var
    -action
+   -action/vars
    -bind
+   -debug
    -string
    -capture-core
    -!))
@@ -106,6 +109,11 @@
 
   (define compiled-ids (make-free-id-table))
 
+  (define (make-peg-rename rename-to)
+    (peg-macro-rep
+     (syntax-parser
+       [_:id rename-to])))
+
   (define/hygienic (expand-peg stx) #:definition
     (syntax-parse stx
       #:literal-sets (peg-literals)
@@ -126,7 +134,6 @@
       [n:id
        (with-syntax ([#%peg-var (datum->syntax this-syntax '#%peg-var)])
          (expand-peg (qstx/rc (#%peg-var n))))]
-      #;[[~brackets body ...] (expand-peg #'(-seq body ...))]
       
       ; Core forms
       [(-char-pred p) (values this-syntax '())]
@@ -144,19 +151,28 @@
       [(-local [g:id e]
                b)
        (with-scope sc
-         (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
-         (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
-         (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
-         (define vb^ (for/list ([v vb])
-                       (splice-from-scope v sc)))
-         (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))]
+         (if (identifier? #'e)
+             (let ()  ; if it's a rebinding of a simple identifier, substitute and drop the -local
+               (bind! (add-scope #'g sc) #'(make-peg-rename (quote-syntax e)))
+               (expand-peg (add-scope #'b sc)))
+             (let ()
+               (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
+               (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
+               (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
+               (define vb^ (for/list ([v vb])
+                             (splice-from-scope v sc)))
+               (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))))]
+      [(-let-peg-macro [name:id e] p)
+       (with-scope sc
+         (bind! (add-scope #'name sc) #'(peg-macro-rep e))
+         (expand-peg (add-scope #'p sc)))]
       [(#%peg-var name:id)
        (when (not (parser-binding? (lookup #'name)))
          (raise-syntax-error #f "not bound as a peg" #'name))
        (values this-syntax '())]
       [(-action pe e)
        (define-values (pe^ v) (expand-peg #'pe))
-       (values (qstx/rc (-action #,pe^ e)) '())]
+       (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e)) '())]
       [(-bind x:id e)
        (define-values (e^ v) (expand-peg #'e))
        (def/stx x^ (bind! #'x #f))
@@ -171,6 +187,10 @@
       [(-! e)
        (define-values (e^ v) (expand-peg #'e))
        (values (qstx/rc (-! #,e^)) '())]
+      [(-debug e)
+       (define-values (e^ v) (expand-peg #'e))
+       (displayln e^)
+       (values e^ v)]
       [_ (raise-syntax-error #f "not a peg form" this-syntax)]))
 
   (define/hygienic (compile stx in) #:expression
@@ -213,10 +233,8 @@
       [(#%peg-var name:id)
        (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids #'name)))
        #`(f #,in)]
-      [(-action pe e)
-       (define-values (_ vs) (expand-peg #'pe))
+      [(-action/vars (v ...) pe e)
        (def/stx c (compile #'pe in))
-       (def/stx (v ...) (map syntax-local-introduce-splice vs))
        #'(let ([v undefined] ...)
            (let-values ([(in _) c])
              (if (failure? in)
@@ -253,6 +271,13 @@
     [(_ peg-e)
      (ee-lib-boundary
       (define-values (peg-e^ vs) (expand-peg #'peg-e))
+      (when (not (null? vs))
+        (raise-syntax-error
+         'define-peg
+         "variables may only be bound within an action (=>) form"
+         #f
+         #f
+         vs)) 
       (def/stx compiled-e (compile peg-e^ #'in))
       #'(lambda (in)
           compiled-e))]))
@@ -263,20 +288,21 @@
      (if (eq? 'module (syntax-local-context))
          #'(begin-for-syntax e)
          #'(begin
-             (define-syntax m (lambda (stx) e #'(void)))
+             (define-syntax m (lambda (stx) e #'(begin)))
              (m))
          )]))
 
-(define-syntax define-peg
+(define-syntax define-peg-core
   (syntax-parser
     [(_ name peg-e)
+     (def/stx impl (format-id #f "~a-impl" #'name))
      #'(begin
-         (define runtime (peg-body peg-e))
+         (define impl (peg-body peg-e))
          (define-syntax name (parser-binding-rep))
          (begin-for-syntax/maybe-expr
            ; syntax-local-introduce not necessary because this doesn't
            ; run within a macro.
-           (free-id-table-set! compiled-ids #'name #'runtime)))]))
+           (free-id-table-set! compiled-ids #'name #'impl)))]))
 
 (struct parse-result [index value] #:transparent)
 
@@ -327,19 +353,15 @@
   (-char-range c1:char c2:char)
   (-char-pred (lambda (v) (and (char>=? v c1) (char<=? v c2)))))
 
+(define-simple-peg-macro
+  (-char-except c:char ...)
+  (-char-pred (lambda (v) (not (or (char=? v c) ...)))))
+
 (define-peg-macro -seq
   (syntax-parser
     [(_ e) #'e]
     [(_ e1 e* ...)
      #'(-seq2 e1 (-seq e* ...))]))
-
-#;(define-peg-macro -seq
-  (syntax-parser
-    #:datum-literals (=>)
-    [(_ p ... => e)
-     #'(-action (-seq* p ...) e)]
-    [(_ p ...)
-     #'(-seq* p ...)]))
 
 (define-peg-macro -or
   (syntax-parser
@@ -350,14 +372,6 @@
 (define-simple-peg-macro -eof (-! -any-char))
 
 (define-simple-peg-macro (-+ e) (-local [t e] (-seq t (-* t))))
-
-#;(define-syntax define-peg
-  (syntax-parser
-    #:datum-literals (=>)
-    [(_ name:id p => e)
-     #'(define-peg-core name (-action p e))]
-    [(_ name:id p ...)
-     #'(define-peg-core name (-or p ...))]))
 
 (define-peg-macro -capture
   (syntax-parser
@@ -384,6 +398,47 @@
 (define-simple-peg-macro
   (-? e)
   (-or e -eps))
+
+(define-simple-peg-macro
+  (-*/list p)
+  (-local [rec (-or (-action (-seq (-bind i p) (-bind r rec))
+                             (cons i r))
+                    (-action -eps
+                             '()))]
+          rec))
+
+; This situation should support tail recursion, but we'd need to build it in
+; to the core.
+(define-peg-macro -drop
+  (syntax-parser
+    #:datum-literals (/)
+    [(_ s ... / t)
+     #'(-action (-seq s ... (-bind rest t)) rest)]))
+
+(define-for-syntax (make-parameterized-production-transformer params body)
+  (syntax-parser
+    [(_ arg ...)
+     #:fail-unless (= (length (syntax->list params)) (length (syntax->list #'(arg ...))))
+     (format "wrong number of arguments. expected: ~a, actual: ~a"
+             (length (syntax->list params)) (length (syntax->list #'(arg ...))))
+     (for/fold ([body body])
+               ([arg (reverse (syntax->list #'(arg ...)))]
+                [param (reverse (syntax->list params))])
+       #`(-local [#,param #,arg] #,body))]))
+(define-for-syntax (parameterized-production-error-transformer stx)
+  (raise-syntax-error #f "parameterized productions may not be called recursively" stx))
+
+(define-syntax define-peg
+  (syntax-parser
+    [(_ name:id e)
+     #'(define-peg-core name e)]
+    [(_ (name:id param:id ...) e)
+     #'(define-peg-macro name
+         (make-parameterized-production-transformer
+          #'(param ...)
+          #'(-let-peg-macro [name parameterized-production-error-transformer]
+                            e)))]))
+     
 
 ; TODO:
 ; * parsing of token streams (hence the generic approach with `text`)
