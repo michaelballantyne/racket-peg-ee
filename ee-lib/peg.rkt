@@ -30,7 +30,8 @@
 ; Runtime
 
 (struct failure [])
-(define (fail) (values (failure) (void)))
+(define the-failure (failure))
+
 
 (struct text [str ix ln col] #:transparent)
 
@@ -38,6 +39,8 @@
   (text str 0 0 0))
 
 (begin-encourage-inline
+  (define (fail) (values the-failure (void)))
+  
   (define (step-input c ix ln col)
     (if (char=? c #\newline)
         (values (+ ix 1)
@@ -81,7 +84,7 @@
           (if match?
               (values (cdr in) res)
               (fail)))
-          (fail))))
+        (fail))))
 
 ; Syntactic forms and compiler
 

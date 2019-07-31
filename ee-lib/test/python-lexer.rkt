@@ -2,12 +2,14 @@
 
 (require "../peg.rkt"
          rackunit
+         racket/performance-hint
          (for-syntax
           racket/string
           syntax/parse
           syntax/stx))
 
 (provide lexer)
+
 
 (define (compute-dedent new-level indent-stack)
   (let loop ([s indent-stack]
@@ -37,6 +39,7 @@
        (set! indent-stack new-stack)
        (make-list dedent-count '(DEDENT))]))
   line-indent!)
+  
   
 (define (lexer str)
   (define line-indent! (make-offsides-handler))
@@ -144,7 +147,7 @@
     (=> (-capture s whitespace)
         ; TODO: Side-effect. Should I support effect backtracking?
         (line-indent! (string-length s))))
-
+  
   ; TODO: other line termination sequences
   (define-peg line-terminator (-or #\newline))
   
@@ -191,4 +194,68 @@
 1_1 + 3,
 here
    )
-  )
+
+  (time
+   (for ([i (in-range 1 1000)])
+     (lexer
+      #<<here
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+# Comment 1
+ foo
+  bar baz
+ baz False
+ # foo
+'foo' if 5 else True
+1_1 + 3,
+here
+   
+      )
+     )))
