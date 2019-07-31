@@ -8,7 +8,9 @@
          (rename-out [#%peg-var-with-: #%peg-var])
          (rename-out [-action =>])
          #%peg-datum
-         (struct-out parse-result))
+         (rename-out [make-text text])
+         (struct-out parse-result)
+         -token-pred)
 
 (require
   racket/undefined
@@ -46,7 +48,8 @@
                 (+ col 1))))
 
   (define (char-pred-rt in p)
-    (if (< (text-ix in) (string-length (text-str in)))
+    (if (and (text? in)
+             (< (text-ix in) (string-length (text-str in))))
         (let ([c (string-ref (text-str in) (text-ix in))])
           (if (p c)
               (let-values
@@ -57,7 +60,8 @@
         (fail)))
 
   (define (string-rt in s)
-    (if (<= (+ (text-ix in) (string-length s)) (string-length (text-str in)))
+    (if (and (text? in)
+             (<= (+ (text-ix in) (string-length s)) (string-length (text-str in))))
         (let loop ([ix (text-ix in)]
                    [ln (text-ln in)]
                    [col (text-col in)]
@@ -69,7 +73,15 @@
                       (loop ix ln col (+ s-ix 1)))
                     (fail)))
               (values (text (text-str in) ix ln col) s)))
-        (fail))))
+        (fail)))
+
+  (define (token-pred-rt in p)
+    (if (pair? in)
+        (let-values ([(match? res) (p (car in))])
+          (if match?
+              (values (cdr in) res)
+              (fail)))
+          (fail))))
 
 ; Syntactic forms and compiler
 
@@ -78,6 +90,7 @@
   "peg forms cannot be used as racket expressions"
   (-eps
    -char-pred
+   -token-pred
    -seq2
    -or2
    -*
@@ -136,19 +149,20 @@
          (expand-peg (qstx/rc (#%peg-var n))))]
       
       ; Core forms
-      [(-char-pred p) (values this-syntax '())]
-      [(-seq2 e1 e2)
+      [(-char-pred ~! p) (values this-syntax '())]
+      [(-token-pred ~! p) (values this-syntax '())]
+      [(-seq2 ~! e1 e2)
        (define-values (e1^ v1) (expand-peg #'e1))
        (define-values (e2^ v2) (expand-peg #'e2))
        (values (qstx/rc (-seq2 #,e1^ #,e2^)) (append v1 v2))]
-      [(-or2 e1 e2)
+      [(-or2 ~! e1 e2)
        (define-values (e1^ v1) (expand-peg #'e1))
        (define-values (e2^ v2) (expand-peg #'e2))
        (values (qstx/rc (-or2 #,e1^ #,e2^)) (append v1 v2))]
-      [(-* e)
+      [(-* ~! e)
        (define-values (e^ vs) (expand-peg #'e))
        (values (qstx/rc (-* #,e^)) '())]
-      [(-local [g:id e]
+      [(-local ~! [g:id e]
                b)
        (with-scope sc
          (if (identifier? #'e)
@@ -162,32 +176,32 @@
                (define vb^ (for/list ([v vb])
                              (splice-from-scope v sc)))
                (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))))]
-      [(-let-peg-macro [name:id e] p)
+      [(-let-peg-macro ~! [name:id e] p)
        (with-scope sc
          (bind! (add-scope #'name sc) #'(peg-macro-rep e))
          (expand-peg (add-scope #'p sc)))]
-      [(#%peg-var name:id)
+      [(#%peg-var ~! name:id)
        (when (not (parser-binding? (lookup #'name)))
          (raise-syntax-error #f "not bound as a peg" #'name))
        (values this-syntax '())]
-      [(-action pe e)
+      [(-action ~! pe e)
        (define-values (pe^ v) (expand-peg #'pe))
        (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e)) '())]
-      [(-bind x:id e)
+      [(-bind ~! x:id e)
        (define-values (e^ v) (expand-peg #'e))
        (def/stx x^ (bind! #'x #f))
        (values
         (qstx/rc (-bind x^ #,e^))
         (cons (syntax-local-introduce-splice #'x^) v))]
-      [(-string s:string)
+      [(-string ~! s:string)
        (values this-syntax '())]
-      [(-capture-core e)
+      [(-capture-core ~! e)
        (define-values (e^ v) (expand-peg #'e))
        (values (qstx/rc (-capture-core #,e^)) v)]
-      [(-! e)
+      [(-! ~! e)
        (define-values (e^ v) (expand-peg #'e))
        (values (qstx/rc (-! #,e^)) '())]
-      [(-debug e)
+      [(-debug ~! e)
        (define-values (e^ v) (expand-peg #'e))
        (displayln e^)
        (values e^ v)]
@@ -222,6 +236,8 @@
            (f #,in))]
       [(-char-pred p)
        #`(char-pred-rt #,in p)]
+      [(-token-pred p)
+       #`(token-pred-rt #,in p)]
       [(-local [g e]
                b)
        (free-id-table-set! compiled-ids #'g (syntax-local-introduce #'f))
@@ -253,10 +269,12 @@
        #`(string-rt #,in s)]
       [(-capture-core e)
        (def/stx c (compile #'e in))
-       #`(let-values ([(in res) c])
-           (if (failure? in)
-               (fail)
-               (values in (substring (text-str #,in) (text-ix #,in) (text-ix in)))))]
+       #`(if (text? #,in)
+             (let-values ([(in res) c])
+               (if (failure? in)
+                   (fail)
+                   (values in (substring (text-str #,in) (text-ix #,in) (text-ix in)))))
+             (fail))]
       [(-! e)
        (def/stx c (compile #'e in))
        #`(let-values ([(in res) c])
@@ -308,9 +326,9 @@
 
 (define-syntax parse
   (syntax-parser
-    [(_ peg-name str-e)
+    [(_ peg-name in)
      (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids #'peg-name)))
-     #'(let-values ([(in^ res) (f (make-text str-e))])
+     #'(let-values ([(in^ res) (f in)])
          (if (failure? in^)
              (error 'parse "parse failed")
              (parse-result in^ res)))]))

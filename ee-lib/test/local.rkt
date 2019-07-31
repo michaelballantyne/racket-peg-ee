@@ -11,10 +11,10 @@
   (syntax-parser
     [(_ arg)
      #'(-local [bar #\b]
-             (-seq arg bar))]))
+               (-seq arg bar))]))
 
 (define-peg foo
   (-local [bar #\b]
           bar))
 
-(parse foo "b")
+(parse foo (text "b"))

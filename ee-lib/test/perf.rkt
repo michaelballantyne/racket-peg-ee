@@ -13,12 +13,13 @@
 
 
 (define s
-  (apply string-append
-         (make-list 10000
-                    (string-append
-                     (apply string-append
-                            (make-list 50 "ab"))
-                     "\n"))))
+  (text
+   (apply string-append
+          (make-list 10000
+                     (string-append
+                      (apply string-append
+                             (make-list 50 "ab"))
+                      "\n")))))
 
 (define res (parse ab+l s))
 

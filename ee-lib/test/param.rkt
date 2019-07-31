@@ -7,5 +7,5 @@
 
 (define-peg p (f2 (-or #\0 #\1) (-or #\x #\y)))
 
-(parse p "a: 00 b: xx")
-(parse p "a: 10 b: xy")
+(parse p (text "a: 00 b: xx"))
+(parse p (text "a: 10 b: xy"))

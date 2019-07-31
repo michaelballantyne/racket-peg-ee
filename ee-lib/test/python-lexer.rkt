@@ -7,6 +7,8 @@
           syntax/parse
           syntax/stx))
 
+(provide lexer)
+
 (define (compute-dedent new-level indent-stack)
   (let loop ([s indent-stack]
              [count 0])
@@ -51,7 +53,7 @@
   (define-peg id-continue (-or id-start Nd))
   (define-peg identifier
     (=> (-capture s (-seq id-start (-* id-continue)))
-        `(ID ,s)))
+        `(NAME ,s)))
 
   (define-peg-macro -keywords
     (syntax-parser
@@ -71,7 +73,7 @@
           as         def        from       nonlocal   while
           assert     del        global     not        with
           async      elif       if         or         yield"))
-        `(KEYWORD ,(string->symbol s))))
+        `(KEYWORD ,s)))
 
   (define-peg operator
     (-keywords
@@ -96,7 +98,7 @@
   (define-peg decinteger
     (=> (-capture s (-or (-seq nonzerodigit (-* (-seq (-? #\_) digit)))
                          (-seq (-+ #\0) (-* (-seq (-? #\_) #\0)))))
-        `(LIT
+        `(NUMBER
           ,(string->number
             (list->string
              (filter (lambda (c) (not (char=? c #\_))) (string->list s)))))))
@@ -128,7 +130,7 @@
     (=> (-seq
          #; (-? string-prefix)  ; TODO
          (-bind chars (-debug (string-variants -any-char string-escape-seq))))
-        `(LIT ,(apply string-append chars))))
+        `(STRING ,(apply string-append chars))))
 
   (define-peg literal (-or integer string)) ; TODO: bytes, other numbers
 
@@ -174,17 +176,19 @@
      (=> (-seq t:simple-token rest:line-continue)    ; simple tokens
          (cons t rest))))
 
-  (parse line-start str))
+  (parse line-start (text str)))
 
+(module+ test
 
-(lexer
- #<<here
+  (lexer
+   #<<here
 # Comment 1
  foo
   bar baz
  baz False
  # foo
-'foo'
+'foo' if 5 else True
 1_1 + 3,
 here
- )
+   )
+  )

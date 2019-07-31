@@ -5,8 +5,8 @@
 
 (define-simple-peg-macro
   (-many-until2 many-e until-e)
-  (-local ([until until-e])
-          (-local ([rec (-or until (-seq many-e rec))])
+  (-local [until until-e]
+          (-local [rec (-or until (-seq many-e rec))]
                   rec)))
 
 
@@ -19,5 +19,5 @@
    c))
 
 (check-equal?
- (parse t "before; a b c\nafter")
+ (parse-result-value (parse t (text "before; a b c\nafter")))
  "; a b c\n")

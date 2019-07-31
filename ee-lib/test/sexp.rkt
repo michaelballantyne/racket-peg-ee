@@ -49,8 +49,9 @@
    empty-as-list))
 
 (parse sexp
-       #<<end
+       (text
+        #<<end
 (x :y 1 "a" (b) ; comment
 )
 end
-       )
+        ))

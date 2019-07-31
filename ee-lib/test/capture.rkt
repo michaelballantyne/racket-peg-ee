@@ -8,4 +8,4 @@
   (=> (-seq (-bind x (-capture (-* (-or alpha digit)))) -eof)
       x))
 
-(parse p "12a")
+(parse p (text "12a"))
