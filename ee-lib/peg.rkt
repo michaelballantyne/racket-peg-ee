@@ -1,6 +1,6 @@
 #lang racket
 
-(provide define-peg parse -eps -seq -char-pred -or -* -local -action -bind -! -debug
+(provide define-peg parse -eps -seq -char-pred -or -* -local -action -bind -! -debug-expand
          define-peg-macro define-simple-peg-macro
          -char -any-char -char-range -char-except
          -string -capture -eof
@@ -39,52 +39,7 @@
   (text str 0 0 0))
 
 (begin-encourage-inline
-  (define (fail) (values the-failure (void)))
-  
-  (define (step-input c ix ln col)
-    (if (char=? c #\newline)
-        (values (+ ix 1)
-                (+ ln 1)
-                0)
-        (values (+ ix 1)
-                ln
-                (+ col 1))))
-
-  (define (char-pred-rt in p)
-    (if (and (text? in)
-             (< (text-ix in) (string-length (text-str in))))
-        (let ([c (string-ref (text-str in) (text-ix in))])
-          (if (p c)
-              (let-values
-                  ([(ix ln col)
-                    (step-input c (text-ix in) (text-ln in) (text-col in))])
-                (values (text (text-str in) ix ln col) (void)))
-              (fail)))
-        (fail)))
-
-  (define (string-rt in s)
-    (if (and (text? in)
-             (<= (+ (text-ix in) (string-length s)) (string-length (text-str in))))
-        (let loop ([ix (text-ix in)]
-                   [ln (text-ln in)]
-                   [col (text-col in)]
-                   [s-ix 0])
-          (if (< s-ix (string-length s))
-              (let ([c (string-ref (text-str in) ix)])
-                (if (char=? c (string-ref s s-ix))
-                    (let-values ([(ix ln col) (step-input c ix ln col)])
-                      (loop ix ln col (+ s-ix 1)))
-                    (fail)))
-              (values (text (text-str in) ix ln col) s)))
-        (fail)))
-
-  (define (token-pred-rt in p)
-    (if (pair? in)
-        (let-values ([(match? res) (p (car in))])
-          (if match?
-              (values (cdr in) res)
-              (fail)))
-        (fail))))
+  (define (fail) (values the-failure (void))))
 
 ; Syntactic forms and compiler
 
@@ -92,8 +47,6 @@
   peg-literals
   "peg forms cannot be used as racket expressions"
   (-eps
-   -char-pred
-   -token-pred
    -seq2
    -or2
    -*
@@ -103,10 +56,10 @@
    -action
    -action/vars
    -bind
-   -debug
-   -string
-   -capture-core
-   -!))
+   -debug-expand
+   -!
+   -dyn
+   ))
 
 (require (for-syntax syntax/id-table))
 
@@ -152,8 +105,6 @@
          (expand-peg (qstx/rc (#%peg-var n))))]
       
       ; Core forms
-      [(-char-pred ~! p) (values this-syntax '())]
-      [(-token-pred ~! p) (values this-syntax '())]
       [(-seq2 ~! e1 e2)
        (define-values (e1^ v1) (expand-peg #'e1))
        (define-values (e2^ v2) (expand-peg #'e2))
@@ -196,18 +147,18 @@
        (values
         (qstx/rc (-bind x^ #,e^))
         (cons (syntax-local-introduce-splice #'x^) v))]
-      [(-string ~! s:string)
-       (values this-syntax '())]
-      [(-capture-core ~! e)
-       (define-values (e^ v) (expand-peg #'e))
-       (values (qstx/rc (-capture-core #,e^)) v)]
       [(-! ~! e)
        (define-values (e^ v) (expand-peg #'e))
        (values (qstx/rc (-! #,e^)) '())]
-      [(-debug ~! e)
+      [(-debug-expand ~! e)
        (define-values (e^ v) (expand-peg #'e))
        (displayln e^)
        (values e^ v)]
+      [(-dyn f)
+       (values this-syntax '())]
+      [(-dyn f p)
+       (define-values (p^ v) (expand-peg #'p))
+       (values (qstx/rc (-dyn f #,p^)) v)]
       [_ (raise-syntax-error #f "not a peg form" this-syntax)]))
 
   (define/hygienic (compile stx in) #:expression
@@ -237,10 +188,6 @@
                              (values in (void))
                              (f in^))))])
            (f #,in))]
-      [(-char-pred p)
-       #`(char-pred-rt #,in p)]
-      [(-token-pred p)
-       #`(token-pred-rt #,in p)]
       [(-local [g e]
                b)
        (free-id-table-set! compiled-ids #'g (syntax-local-introduce #'f))
@@ -268,22 +215,18 @@
                (begin
                  (set! x res)
                  (values in res))))]
-      [(-string s:string)
-       #`(string-rt #,in s)]
-      [(-capture-core e)
-       (def/stx c (compile #'e in))
-       #`(if (text? #,in)
-             (let-values ([(in res) c])
-               (if (failure? in)
-                   (fail)
-                   (values in (substring (text-str #,in) (text-ix #,in) (text-ix in)))))
-             (fail))]
       [(-! e)
        (def/stx c (compile #'e in))
        #`(let-values ([(in res) c])
            (if (failure? in)
                (values #,in (void))
                (fail)))]
+      [(-dyn f)
+       #`(f #,in)]
+      [(-dyn f p)
+       (def/stx c (compile #'p #'in))
+       #`(let ([g (lambda (in) c)])
+           (f g #,in))]      
       [_ (raise-syntax-error #f "not a core peg form" this-syntax)]
       )))
 
@@ -357,9 +300,83 @@
           #,((make-syntax-introducer) stx)
           [h.pat . body]))]))
 
+
+(begin-encourage-inline
+  (define (step-input c ix ln col)
+    (if (char=? c #\newline)
+        (values (+ ix 1)
+                (+ ln 1)
+                0)
+        (values (+ ix 1)
+                ln
+                (+ col 1))))
+
+  (define ((char-pred-rt p) in)
+    (if (and (text? in)
+             (< (text-ix in) (string-length (text-str in))))
+        (let ([c (string-ref (text-str in) (text-ix in))])
+          (if (p c)
+              (let-values
+                  ([(ix ln col)
+                    (step-input c (text-ix in) (text-ln in) (text-col in))])
+                (values (text (text-str in) ix ln col) (void)))
+              (fail)))
+        (fail)))
+
+  (define ((string-rt s) in)
+    (if (and (text? in)
+             (<= (+ (text-ix in) (string-length s)) (string-length (text-str in))))
+        (let loop ([ix (text-ix in)]
+                   [ln (text-ln in)]
+                   [col (text-col in)]
+                   [s-ix 0])
+          (if (< s-ix (string-length s))
+              (let ([c (string-ref (text-str in) ix)])
+                (if (char=? c (string-ref s s-ix))
+                    (let-values ([(ix ln col) (step-input c ix ln col)])
+                      (loop ix ln col (+ s-ix 1)))
+                    (fail)))
+              (values (text (text-str in) ix ln col) s)))
+        (fail)))
+
+  (define ((token-pred-rt p) in)
+    (if (pair? in)
+        (let-values ([(match? res) (p (car in))])
+          (if match?
+              (values (cdr in) res)
+              (fail)))
+        (fail)))
+
+  (define (capture-rt p in)
+    (if (text? in)
+        (let-values ([(in^ res) (p in)])
+          (if (failure? in^)
+              (fail)
+              (values in^ (substring (text-str in) (text-ix in) (text-ix in^)))))
+        (fail)))
+  )
+
+(define-simple-peg-macro
+  (-char-pred p)
+  (-dyn (char-pred-rt p)))
+
+(define-simple-peg-macro
+  (-string s:string)
+  (-dyn (string-rt s)))
+
+(define-simple-peg-macro
+  (-token-pred p)
+  (-dyn (token-pred-rt p)))
+
+(define-simple-peg-macro
+  (-capture-core p)
+  (-dyn capture-rt p))
+
+(begin-encourage-inline
+  (define (char-rt c) (char-pred-rt (lambda (v) (char=? c v)))))
 (define-simple-peg-macro
   (-char c:char)
-  (-char-pred (lambda (v) (char=? c v))))
+  (-dyn (char-rt c)))
 
 (define-peg-macro #%peg-datum
   (syntax-parser
