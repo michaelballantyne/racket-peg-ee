@@ -1,16 +1,20 @@
 #lang racket
 
-(provide define-peg parse -eps -seq -char-pred -or -* -local -action -bind -! -debug-expand
+(provide define-peg parse -eps -char-pred -or -* -local -action -bind -! -debug-expand
          define-peg-macro define-simple-peg-macro
          -char -any-char -char-range -char-except
          -string -capture -eof
-         -+ -? -drop -many-until -*/list
+         -+ -? -seq/last -many-until -*/list
          (rename-out [#%peg-var-with-: #%peg-var])
          (rename-out [-action =>])
          #%peg-datum
          (rename-out [make-text text])
          (struct-out parse-result)
-         -token-pred)
+         -token-pred
+         -let-syntax
+         -let
+         (rename-out [-seq=> -seq])
+         )
 
 (require
   racket/undefined
@@ -51,7 +55,7 @@
    -or2
    -*
    -local
-   -let-peg-macro
+   -let-syntax
    #%peg-var
    -action
    -action/vars
@@ -59,6 +63,7 @@
    -debug-expand
    -!
    -dyn
+   -let
    ))
 
 (require (for-syntax syntax/id-table))
@@ -74,7 +79,6 @@
   (define-generics parser-binding)
   (struct parser-binding-rep ()
     #:methods gen:parser-binding [])
-  
 
   (define compiled-ids (make-free-id-table))
 
@@ -130,9 +134,9 @@
                (define vb^ (for/list ([v vb])
                              (splice-from-scope v sc)))
                (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))))]
-      [(-let-peg-macro ~! [name:id e] p)
+      [(-let-syntax ~! [name:id e] p)
        (with-scope sc
-         (bind! (add-scope #'name sc) #'(peg-macro-rep e))
+         (bind! (add-scope #'name sc) #'e)
          (expand-peg (add-scope #'p sc)))]
       [(#%peg-var ~! name:id)
        (when (not (parser-binding? (lookup #'name)))
@@ -140,7 +144,8 @@
        (values this-syntax '())]
       [(-action ~! pe e)
        (define-values (pe^ v) (expand-peg #'pe))
-       (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e)) '())]
+       (def/stx e^ (local-expand #'e 'expression '() (current-def-ctx)))
+       (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e^)) '())]
       [(-bind ~! x:id e)
        (define-values (e^ v) (expand-peg #'e))
        (def/stx x^ (bind! #'x #f))
@@ -159,6 +164,18 @@
       [(-dyn f p)
        (define-values (p^ v) (expand-peg #'p))
        (values (qstx/rc (-dyn f #,p^)) v)]
+      [(-let [v e]
+             b)
+       (with-scope s
+         (if (identifier? #'e)
+             (let ()
+               (bind! (add-scope #'v s) #'(make-rename-transformer #'e))
+               (expand-peg (add-scope #'b s)))
+             (let ()
+               (def/stx v^ (bind! (add-scope #'v s) #f))
+               (def/stx e^ (local-expand #'e 'expression '() (current-def-ctx)))
+               (define-values (b^ vs) (expand-peg (add-scope #'b s)))
+               (values (qstx/rc (-let [v^ e^] #,b^)) vs))))]
       [_ (raise-syntax-error #f "not a peg form" this-syntax)]))
 
   (define/hygienic (compile stx in) #:expression
@@ -226,7 +243,11 @@
       [(-dyn f p)
        (def/stx c (compile #'p #'in))
        #`(let ([g (lambda (in) c)])
-           (f g #,in))]      
+           (f g #,in))]
+      [(-let [v e] b)
+       (def/stx c (compile #'b in))
+       #'(let ([v e])
+           c)]
       [_ (raise-syntax-error #f "not a core peg form" this-syntax)]
       )))
 
@@ -447,35 +468,61 @@
 
 ; This situation should support tail recursion, but we'd need to build it in
 ; to the core.
-(define-peg-macro -drop
+(define-peg-macro -seq/last
   (syntax-parser
     #:datum-literals (/)
-    [(_ s ... / t)
+    [(_ s ... t)
      #'(-action (-seq s ... (-bind rest t)) rest)]))
 
-(define-for-syntax (make-parameterized-production-transformer params body)
+(define-for-syntax (make-parameterized-production-transformer peg-params rkt-params body)
   (syntax-parser
-    [(_ arg ...)
-     #:fail-unless (= (length (syntax->list params)) (length (syntax->list #'(arg ...))))
-     (format "wrong number of arguments. expected: ~a, actual: ~a"
-             (length (syntax->list params)) (length (syntax->list #'(arg ...))))
-     (for/fold ([body body])
-               ([arg (reverse (syntax->list #'(arg ...)))]
-                [param (reverse (syntax->list params))])
-       #`(-local [#,param #,arg] #,body))]))
+    #:datum-literals (&)
+    [(_ (~seq (~peek-not &) peg-arg) ...
+        (~optional (~seq & rkt-arg ...) #:defaults ([(rkt-arg 1) '()])))
+     #:fail-unless (= (length (syntax->list peg-params)) (length (syntax->list #'(peg-arg ...))))
+     (format "wrong number of peg arguments. expected: ~a, actual: ~a"
+             (length (syntax->list peg-params)) (length (syntax->list #'(peg-arg ...))))
+     #:fail-unless (= (length (syntax->list rkt-params)) (length (syntax->list #'(rkt-arg ...))))
+     (format "wrong number of racket arguments. expected: ~a, actual: ~a"
+             (length (syntax->list rkt-params)) (length (syntax->list #'(rkt-arg ...))))
+     (define wrapped1
+       (for/fold ([body body])
+                 ([arg (reverse (syntax->list #'(peg-arg ...)))]
+                  [param (reverse (syntax->list peg-params))])
+         #`(-local [#,param #,arg] #,body)))
+     (for/fold ([body wrapped1])
+               ([arg (reverse (syntax->list #'(rkt-arg ...)))]
+                [param (reverse (syntax->list rkt-params))])
+       #`(-let [#,param #,arg] #,body))
+     ]))
+
 (define-for-syntax (parameterized-production-error-transformer stx)
   (raise-syntax-error #f "parameterized productions may not be called recursively" stx))
 
 (define-syntax define-peg
   (syntax-parser
+    #:datum-literals (&)
     [(_ name:id e)
      #'(define-peg-core name e)]
-    [(_ (name:id param:id ...) e)
+    [(_ (name:id (~seq (~peek-not &) peg-param:id) ...
+                 (~optional (~seq & rkt-param:id ...) #:defaults ([(rkt-param 1) '()]))) e)
      #'(define-peg-macro name
          (make-parameterized-production-transformer
-          #'(param ...)
-          #'(-let-peg-macro [name parameterized-production-error-transformer]
-                            e)))]))
+          #'(peg-param ...)
+          #'(rkt-param ...)
+          #'(-let-syntax [name (peg-macro-rep parameterized-production-error-transformer)]
+                         e)))]))
+
+(define-peg-macro -seq=>
+  (syntax-parser
+    #:literals (-action)
+    [(_ p ...+ -action e)
+     (define/syntax-parse ($n ...)
+       (for/list ([n (in-range 1 (+ 1 (length (syntax->list #'(p ...)))))])
+         (format-id this-syntax "$~a" n)))
+     #'(-action (-seq (-bind $n p) ...) e)]
+    [(_ p ...+)
+     #'(-seq p ...)]))
      
 
 ; TODO:

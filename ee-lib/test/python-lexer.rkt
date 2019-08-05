@@ -62,7 +62,7 @@
     (syntax-parser
       [(_ ss)
        #:with (s ...) (map (lambda (s) (datum->syntax #'here s))
-                           (string-split (syntax-e #'ss)))
+                           (sort (string-split (syntax-e #'ss)) string>?))
        #'(-or (-string s) ...)]))
   
   (define-peg keyword
@@ -78,21 +78,18 @@
           async      elif       if         or         yield"))
         `(KEYWORD ,s)))
 
-  (define-peg operator
-    (-keywords
-     "+       -       *       **      /       //      %      @
-      <<      >>      &       |       ^       ~
-      <       >       <=      >=      ==      !="))
-
-  (define-peg delimiter
-    (-keywords
-     "(       )       [       ]       {       }
-      ,       :       .       ;       @       =       ->
-      +=      -=      *=      /=      //=     %=      @=
-      &=      |=      ^=      >>=     <<=     **="))
-
   (define-peg punctuation
-    (=> (-capture s (-or operator delimiter))
+    (=> (-capture
+         s
+         (-keywords
+          "+       -       **      *       /       //      %      @
+           <<      >>      &       |       ^       ~
+           <       >       <=      >=      ==      !=
+
+           (       )       [       ]       {       }
+           ,       :       .       ;       @       =       ->
+           +=      -=      *=      /=      //=     %=      @=
+           &=      |=      ^=      >>=     <<=     **="))
         `(PUNCT ,s)))
 
   (define-peg nonzerodigit (-char-range #\1 #\9))
@@ -160,7 +157,7 @@
      (=> (-seq blank-line -eof)                      ; EOF with dedents
          (eof-dedent!))
      
-     (-drop blank-line line-terminator / line-start) ; blank line
+     (-seq/last blank-line line-terminator line-start) ; blank line
      
      (=> (-seq i:indent rest:line-continue)          ; normal line
          (append i rest))))
@@ -172,9 +169,9 @@
      (=> (-seq line-terminator rest:line-start)      ; newline
          (cons '(NEWLINE) rest))
      
-     (-drop comment / line-continue)                 ; comment
-     (-drop #\\ line-terminator / line-continue)     ; line continuation
-     (-drop whitespace-char / line-continue)         ; between-token whitespace
+     (-seq/last comment line-continue)                 ; comment
+     (-seq/last #\\ line-terminator line-continue)     ; line continuation
+     (-seq/last whitespace-char line-continue)         ; between-token whitespace
 
      (=> (-seq t:simple-token rest:line-continue)    ; simple tokens
          (cons t rest))))
