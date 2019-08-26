@@ -68,14 +68,9 @@
 
 (require (for-syntax syntax/id-table))
 
+(define-extensible-syntax peg-macro)
+
 (begin-for-syntax
-  (define-generics peg-macro
-    (peg-macro-transform peg-macro stx))
-  (struct peg-macro-rep (procedure)
-    #:methods gen:peg-macro
-    [(define (peg-macro-transform s stx)
-       ((peg-macro-rep-procedure s) stx))])
-  
   (define-generics parser-binding)
   (struct parser-binding-rep ()
     #:methods gen:parser-binding [])
@@ -300,28 +295,6 @@
              (error 'parse "parse failed")
              (parse-result in^ res)))]))
 
-(define-syntax-rule
-  (define-peg-macro name proc)
-  (define-syntax name (peg-macro-rep proc)))
-
-(require (for-syntax syntax/parse/private/sc))
-
-(begin-for-syntax
-  (define-syntax-class head
-    (pattern (name:id . rest)
-             #:attr pat #'((~var name id) . rest))
-    (pattern name:id
-             #:attr pat #'(~var name id))))
-
-(define-syntax (define-simple-peg-macro stx)
-  (syntax-parse stx
-    [(_ h:head . body)
-     #`(define-peg-macro h.name
-         (syntax-parser/template
-          #,((make-syntax-introducer) stx)
-          [h.pat . body]))]))
-
-
 (begin-encourage-inline
   (define (step-input c ix ln col)
     (if (char=? c #\newline)
@@ -517,7 +490,7 @@
   (syntax-parser
     #:literals (-action)
     [(_ p ...+ -action e)
-     (define/syntax-parse ($n ...)
+     (def/stx ($n ...)
        (for/list ([n (in-range 1 (+ 1 (length (syntax->list #'(p ...)))))])
          (format-id this-syntax "$~a" n)))
      #'(-action (-seq (-bind $n p) ...) e)]
