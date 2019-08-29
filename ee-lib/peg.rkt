@@ -128,6 +128,7 @@
              (let ()
                (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep #f)))
                (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
+               (free-id-table-set! (expanded) #'g^ (syntax-local-introduce #'e^))
                (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
                (define vb^ (for/list ([v vb])
                              (splice-from-scope v sc)))
@@ -295,6 +296,51 @@
           
         (free-id-table-set! table root (syntax-local-introduce compiled))
         )))
+
+  (define (check-left-rec! root)
+    (define visited (make-free-id-table))
+
+    (define (nullable? stx)
+      (syntax-parse stx
+          #:literal-sets (peg-literals)
+          [-eps #t]
+          [(-seq2 e1 e2)
+           (and (nullable? #'e1)
+                (nullable? #'e2))]
+          [(-or2 e1 e2)
+           (or (nullable? #'e1) (nullable? #'e2))]
+          [(-* e) #t]
+          [(-local [g e]
+                   b)
+           (nullable? #'b)]
+          [(#%peg-var name:id)
+           (nullable-nonterminal? #'name)]
+          [(-action/vars (v ...) pe e)
+           (nullable? #'pe)]
+          [(-bind x e)
+           (nullable? #'e)]
+          [(-! e)
+           (not (nullable? #'e))]
+          [(-dyn f)
+           #f]
+          [(-dyn f p)
+           (nullable? #'p)]
+          [(-let [v e] b)
+           (nullable? #'b)]
+          ))
+
+    (define (nullable-nonterminal? id)
+      (case (free-id-table-ref visited id (lambda () 'unvisited))
+             [(nullable) #t]
+             [(not-nullable) #f]
+             [(entered) (raise-syntax-error #f "left recursion through nonterminal" id)]
+             [(unvisited)
+              (free-id-table-set! visited id 'entered)
+              (define res (nullable? (free-id-table-ref (expanded) id)))
+              (free-id-table-set! visited id (if res 'nullable 'not-nullable))
+              res]))
+
+    (nullable-nonterminal? root))
   )
   
 (define-syntax parse
@@ -304,6 +350,8 @@
       (parameterize ([expanded (make-free-id-table)])
         (build-expanded-table! #'peg-name)
 
+        (check-left-rec! #'peg-name)
+        
         (parameterize ([compiled (make-free-id-table)]
                        [compiled-ids (make-free-id-table)])
           (build-compiled-table! #'peg-name)
