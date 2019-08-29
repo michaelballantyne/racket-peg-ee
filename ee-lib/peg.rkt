@@ -36,6 +36,7 @@
 (struct failure [])
 (define the-failure (failure))
 
+(struct parse-result [index value] #:transparent)
 
 (struct text [str ix ln col] #:transparent)
 
@@ -72,16 +73,18 @@
 
 (begin-for-syntax
   (define-generics parser-binding)
-  (struct parser-binding-rep ()
+  (struct parser-binding-rep (stx)
     #:methods gen:parser-binding [])
 
-  (define compiled-ids (make-free-id-table))
+  (define compiled-ids (make-parameter #f))
 
   (define (make-peg-rename rename-to)
     (peg-macro-rep
      (syntax-parser
        [_:id rename-to])))
 
+  (define expanded (make-parameter #f))
+  
   (define/hygienic (expand-peg stx) #:definition
     (syntax-parse stx
       #:literal-sets (peg-literals)
@@ -123,7 +126,7 @@
                (bind! (add-scope #'g sc) #'(make-peg-rename (quote-syntax e)))
                (expand-peg (add-scope #'b sc)))
              (let ()
-               (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
+               (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep #f)))
                (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
                (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
                (define vb^ (for/list ([v vb])
@@ -136,6 +139,7 @@
       [(#%peg-var ~! name:id)
        (when (not (parser-binding? (lookup #'name)))
          (raise-syntax-error #f "not bound as a peg" #'name))
+       (build-expanded-table! #'name)
        (values this-syntax '())]
       [(-action ~! pe e)
        (define-values (pe^ v) (expand-peg #'pe))
@@ -173,6 +177,8 @@
                (values (qstx/rc (-let [v^ e^] #,b^)) vs))))]
       [_ (raise-syntax-error #f "not a peg form" this-syntax)]))
 
+  (define compiled (make-parameter #f))
+  
   (define/hygienic (compile stx in) #:expression
     (syntax-parse stx
       #:literal-sets (peg-literals)
@@ -202,14 +208,15 @@
            (f #,in))]
       [(-local [g e]
                b)
-       (free-id-table-set! compiled-ids #'g (syntax-local-introduce #'f))
+       (free-id-table-set! (compiled-ids) #'g (syntax-local-introduce #'f))
        (def/stx ce (compile #'e #'in^))
        (def/stx cb (compile #'b in))
        #'(letrec ([f (lambda (in^)
                        ce)])
            cb)]
       [(#%peg-var name:id)
-       (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids #'name)))
+       (build-compiled-table! #'name)
+       (def/stx f (syntax-local-introduce (free-id-table-ref (compiled-ids) #'name)))
        #`(f #,in)]
       [(-action/vars (v ...) pe e)
        (def/stx c (compile #'pe in))
@@ -246,6 +253,77 @@
       [_ (raise-syntax-error #f "not a core peg form" this-syntax)]
       )))
 
+(define-syntax define-peg-core
+  (syntax-parser
+    [(_ name peg-e)
+     #'(define-syntax name (parser-binding-rep #'peg-e))]))
+
+(begin-for-syntax
+  (define (free-id-table-has-key? table id)
+    (if (free-id-table-ref table id (lambda () #f))
+        #t
+        #f))
+  
+  (define (build-expanded-table! root)
+    (define table (expanded))
+    (when (not (free-id-table-has-key? table root))
+      (define stx (parser-binding-rep-stx (lookup root)))
+
+      (when stx
+        (free-id-table-set! table root 'tmp)
+
+        (define-values (expanded vars) (expand-peg (syntax-local-introduce stx)))
+        (when (not (null? vars))
+          (raise-syntax-error #f "peg definition with free binders" stx))
+      
+        (free-id-table-set! table root (syntax-local-introduce expanded)))))
+
+  (define (build-compiled-table! root)
+    (define table (compiled))
+
+    (when (not (free-id-table-has-key? table root))
+      ; local bindings will be out of context during compilation, lookup should return unbound
+      (when (parser-binding-rep? (lookup root))
+        (define stx (syntax-local-introduce
+                     (free-id-table-ref (expanded) root)))
+        (free-id-table-set! table root 'tmp)
+        
+        (define id (generate-temporary root))
+        (free-id-table-set! (compiled-ids) root (syntax-local-introduce id))
+        
+        (define compiled #`(lambda (in) #,(compile stx #'in)))
+          
+        (free-id-table-set! table root (syntax-local-introduce compiled))
+        )))
+  )
+  
+(define-syntax parse
+  (syntax-parser
+    [(_ peg-name in)
+     (ee-lib-boundary
+      (parameterize ([expanded (make-free-id-table)])
+        (build-expanded-table! #'peg-name)
+
+        (parameterize ([compiled (make-free-id-table)]
+                       [compiled-ids (make-free-id-table)])
+          (build-compiled-table! #'peg-name)
+
+          (def/stx (b ...)
+            (for/list ([(k v) (in-free-id-table (compiled))])
+              #`(#,(syntax-local-introduce (free-id-table-ref (compiled-ids) k))
+                 #,(syntax-local-introduce v))))
+
+          #`(letrec (b ...)
+              (let-values ([(in^ res) (#,(syntax-local-introduce
+                                          (free-id-table-ref (compiled-ids) #'peg-name))
+                                       in)])
+                (if (failure? in^)
+                    (error 'parse "parse failed")
+                    (parse-result in^ res))))
+          )))
+     ]))
+
+#|
 (define-syntax peg-body
   (syntax-parser
     [(_ peg-e)
@@ -284,8 +362,6 @@
            ; run within a macro.
            (free-id-table-set! compiled-ids #'name #'impl)))]))
 
-(struct parse-result [index value] #:transparent)
-
 (define-syntax parse
   (syntax-parser
     [(_ peg-name in)
@@ -294,6 +370,8 @@
          (if (failure? in^)
              (error 'parse "parse failed")
              (parse-result in^ res)))]))
+
+|#
 
 (begin-encourage-inline
   (define (step-input c ix ln col)
