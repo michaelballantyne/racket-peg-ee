@@ -127,20 +127,36 @@
 
 
 (module+ test
-  (let ()
-    (define tokens
-      (parse-result-value
-       (lexer
-        "x or not 1 * 1 | 2 + 2 * 3 is not 5")))
+  (require rackunit)
+  
+  (define (lex+parse s) (parse-result-value (parser (parse-result-value (lexer s)))))
 
-    (parser
-     tokens))
+  (check-equal?
+   (lex+parse
+    "x or not 1 * 1 | 2 + 2 * 3 is not 5")
+   `(BinOp
+     "x"
+     "or"
+     (UnaryOp
+      "not"
+      (BinOp
+       (BinOp
+        (BinOp
+         1
+         "*"
+         1)
+        "|"
+        (BinOp
+         2
+         "+"
+         (BinOp
+          2
+          "*"
+          3)))
+       "is not"
+       5))))
 
-  (let ()
-    (define tokens
-      (parse-result-value
-       (lexer
-        "{x, y}")))
-
-    (parser
-     tokens)))
+  (check-equal?
+     (lex+parse
+      "{x, y}")
+     '(Set "x" "y")))
