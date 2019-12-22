@@ -128,7 +128,7 @@
              (let ()
                (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep #f)))
                (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
-               (free-id-table-set! (expanded) #'g^ (syntax-local-introduce #'e^))
+               (free-id-table-set! (expanded) #'g^ (syntax-local-introduce e^))
                (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
                (define vb^ (for/list ([v vb])
                              (splice-from-scope v sc)))
