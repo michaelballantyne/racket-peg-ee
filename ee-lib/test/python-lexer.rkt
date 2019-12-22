@@ -129,7 +129,7 @@
   (define-peg string
     (=> (-seq
          #; (-? string-prefix)  ; TODO
-         (-bind chars (-debug-expand (string-variants -any-char string-escape-seq))))
+         (-bind chars (string-variants -any-char string-escape-seq)))
         `(STRING ,(apply string-append chars))))
 
   (define-peg literal (-or integer string)) ; TODO: bytes, other numbers

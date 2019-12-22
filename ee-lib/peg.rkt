@@ -61,7 +61,6 @@
    -action
    -action/vars
    -bind
-   -debug-expand
    -!
    -dyn
    -let
@@ -155,10 +154,6 @@
       [(-! ~! e)
        (define-values (e^ v) (expand-peg #'e))
        (values (qstx/rc (-! #,e^)) '())]
-      [(-debug-expand ~! e)
-       (define-values (e^ v) (expand-peg #'e))
-       (displayln e^)
-       (values e^ v)]
       [(-dyn f)
        (values this-syntax '())]
       [(-dyn f p)
@@ -302,43 +297,43 @@
 
     (define (nullable? stx)
       (syntax-parse stx
-          #:literal-sets (peg-literals)
-          [-eps #t]
-          [(-seq2 e1 e2)
-           (and (nullable? #'e1)
-                (nullable? #'e2))]
-          [(-or2 e1 e2)
-           (or (nullable? #'e1) (nullable? #'e2))]
-          [(-* e) #t]
-          [(-local [g e]
-                   b)
-           (nullable? #'b)]
-          [(#%peg-var name:id)
-           (nullable-nonterminal? #'name)]
-          [(-action/vars (v ...) pe e)
-           (nullable? #'pe)]
-          [(-bind x e)
-           (nullable? #'e)]
-          [(-! e)
-           (not (nullable? #'e))]
-          [(-dyn f)
-           #f]
-          [(-dyn f p)
-           (nullable? #'p)]
-          [(-let [v e] b)
-           (nullable? #'b)]
-          ))
+        #:literal-sets (peg-literals)
+        [-eps #t]
+        [(-seq2 e1 e2)
+         (and (nullable? #'e1)
+              (nullable? #'e2))]
+        [(-or2 e1 e2)
+         (or (nullable? #'e1) (nullable? #'e2))]
+        [(-* e) #t]
+        [(-local [g e]
+                 b)
+         (nullable? #'b)]
+        [(#%peg-var name:id)
+         (nullable-nonterminal? #'name)]
+        [(-action/vars (v ...) pe e)
+         (nullable? #'pe)]
+        [(-bind x e)
+         (nullable? #'e)]
+        [(-! e)
+         (not (nullable? #'e))]
+        [(-dyn f)
+         #f]
+        [(-dyn f p)
+         (nullable? #'p)]
+        [(-let [v e] b)
+         (nullable? #'b)]
+        ))
 
     (define (nullable-nonterminal? id)
       (case (free-id-table-ref visited id (lambda () 'unvisited))
-             [(nullable) #t]
-             [(not-nullable) #f]
-             [(entered) (raise-syntax-error #f "left recursion through nonterminal" id)]
-             [(unvisited)
-              (free-id-table-set! visited id 'entered)
-              (define res (nullable? (free-id-table-ref (expanded) id)))
-              (free-id-table-set! visited id (if res 'nullable 'not-nullable))
-              res]))
+        [(nullable) #t]
+        [(not-nullable) #f]
+        [(entered) (raise-syntax-error #f "left recursion through nonterminal" id)]
+        [(unvisited)
+         (free-id-table-set! visited id 'entered)
+         (define res (nullable? (free-id-table-ref (expanded) id)))
+         (free-id-table-set! visited id (if res 'nullable 'not-nullable))
+         res]))
 
     (nullable-nonterminal? root))
   )
@@ -622,7 +617,14 @@
      #'(-action (-seq (-bind $n p) ...) e)]
     [(_ p ...+)
      #'(-seq p ...)]))
-     
+
+(define-peg-macro -debug-expand
+  (syntax-parser
+    [(_ e)
+     (define-values (e^ v) (expand-peg #'e))
+     (displayln e^)
+     #'e]))
+
 
 ; TODO:
 ; * parsing of token streams (hence the generic approach with `text`)
