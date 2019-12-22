@@ -141,7 +141,7 @@
          (raise-syntax-error #f "not bound as a peg" #'name))
        (build-expanded-table! #'name)
        (values this-syntax '())]
-      [(-action ~! pe e)
+      [(~or (-action ~! pe e) (-action/vars (old-vars:id ...) pe e))
        (define-values (pe^ v) (expand-peg #'pe))
        (def/stx e^ (local-expand #'e 'expression '() (current-def-ctx)))
        (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e^)) '())]
@@ -623,7 +623,7 @@
     [(_ e)
      (define-values (e^ v) (expand-peg #'e))
      (displayln e^)
-     #'e]))
+     e^]))
 
 
 ; TODO:
