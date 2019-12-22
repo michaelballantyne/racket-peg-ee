@@ -56,14 +56,15 @@
    -or2
    -*
    -local
-   -let-syntax
    #%peg-var
-   -action
+   -let-syntax
+   -let
    -action/vars
    -bind
    -!
    -dyn
-   -let
+
+   -action ; handled by the expander but not present in fully-expanded syntax.
    ))
 
 (require (for-syntax syntax/id-table))
@@ -141,6 +142,9 @@
          (raise-syntax-error #f "not bound as a peg" #'name))
        (build-expanded-table! #'name)
        (values this-syntax '())]
+      ; -action is handled by the core expander only to avoid the quadratic
+      ; expansion time we'd get if it were a macro and the expander validated
+      ; the var list with -action/vars as the only core form.
       [(~or (-action ~! pe e) (-action/vars (old-vars:id ...) pe e))
        (define-values (pe^ v) (expand-peg #'pe))
        (def/stx e^ (local-expand #'e 'expression '() (current-def-ctx)))
