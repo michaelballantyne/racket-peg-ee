@@ -6,7 +6,7 @@
 (require
   racket/undefined
   racket/performance-hint
-  
+
   ee-lib/define
   (for-syntax
    racket/syntax
@@ -81,11 +81,11 @@
     #:methods gen:peg-macro
     [(define (peg-macro-transform s stx)
        ((peg-macro-rep-procedure s) stx))])
-  
+
   (define-generics parser-binding)
   (struct parser-binding-rep ()
     #:methods gen:parser-binding [])
-  
+
 
   (define compiled-ids (make-free-id-table))
 
@@ -100,7 +100,7 @@
        #:when (peg-macro? binding)
        (expand-peg
         (peg-macro-transform binding stx))]
-      
+
       ; Core forms
       [-eps this-syntax]
       [(-char-pred p) this-syntax]
@@ -117,13 +117,13 @@
        (qstx/rc (-* e^))]
       [(-local ([g:id e])
                b)
-       (define sc (make-scope))
-       (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
-       (def/stx e^ (expand-peg (add-scope #'e sc)))
-       (def/stx b^ (expand-peg (add-scope #'b sc)))
-       (qstx/rc
-        (-local [g^ e^]
-                b^))]
+       (with-scope sc
+         (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep)))
+         (def/stx e^ (expand-peg (add-scope #'e sc)))
+         (def/stx b^ (expand-peg (add-scope #'b sc)))
+         (qstx/rc
+          (-local [g^ e^]
+                  b^)))]
       [name:id
        (when (not (parser-binding? (lookup #'name)))
          (raise-syntax-error #f "not bound as a peg" #'name))
