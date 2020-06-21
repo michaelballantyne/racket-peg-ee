@@ -97,7 +97,7 @@
        [_:id rename-to])))
 
   (define expanded (make-parameter #f))
-  
+
   (define/hygienic (expand-peg stx) #:definition
     (syntax-parse stx
       #:literal-sets (peg-literals)
@@ -114,11 +114,11 @@
 
       ; core form, but put first so we can assume remaining ids are references
       [-eps (values this-syntax '())]
-      
+
       [n:id
        (with-syntax ([#%peg-var (datum->syntax this-syntax '#%peg-var)])
          (expand-peg (qstx/rc (#%peg-var n))))]
-      
+
       ; Core forms
       [(-seq2 ~! e1 e2)
        (define-values (e1^ v1) (expand-peg #'e1))
@@ -191,7 +191,7 @@
       [_ (raise-syntax-error #f "not a peg form" this-syntax)]))
 
   (define compiled (make-parameter #f))
-  
+
   (define/hygienic (compile stx in) #:expression
     (syntax-parse stx
       #:literal-sets (peg-literals)
@@ -276,7 +276,7 @@
     (if (free-id-table-ref table id (lambda () #f))
         #t
         #f))
-  
+
   (define (build-expanded-table! root)
     (define table (expanded))
     (when (not (free-id-table-has-key? table root))
@@ -288,7 +288,7 @@
         (define-values (expanded vars) (expand-peg (syntax-local-introduce stx)))
         (when (not (null? vars))
           (raise-syntax-error #f "peg definition with free binders" stx))
-      
+
         (free-id-table-set! table root (syntax-local-introduce expanded)))))
 
   (define (build-compiled-table! root)
@@ -300,12 +300,12 @@
         (define stx (syntax-local-introduce
                      (free-id-table-ref (expanded) root)))
         (free-id-table-set! table root 'tmp)
-        
+
         (define id (generate-temporary root))
         (free-id-table-set! (compiled-ids) root (syntax-local-introduce id))
-        
+
         (define compiled #`(lambda (in) #,(compile stx #'in)))
-          
+
         (free-id-table-set! table root (syntax-local-introduce compiled))
         )))
 
@@ -354,33 +354,32 @@
 
     (nullable-nonterminal? root))
   )
-  
+
 (define-syntax parse
   (syntax-parser
     [(_ peg-name in)
-     (ee-lib-boundary
-      (parameterize ([expanded (make-free-id-table)])
-        (build-expanded-table! #'peg-name)
+     (parameterize ([expanded (make-free-id-table)])
+       (build-expanded-table! #'peg-name)
 
-        (check-left-rec! #'peg-name)
-        
-        (parameterize ([compiled (make-free-id-table)]
-                       [compiled-ids (make-free-id-table)])
-          (build-compiled-table! #'peg-name)
+       (check-left-rec! #'peg-name)
 
-          (def/stx (b ...)
-            (for/list ([(k v) (in-free-id-table (compiled))])
-              #`(#,(syntax-local-introduce (free-id-table-ref (compiled-ids) k))
-                 #,(syntax-local-introduce v))))
+       (parameterize ([compiled (make-free-id-table)]
+                      [compiled-ids (make-free-id-table)])
+         (build-compiled-table! #'peg-name)
 
-          #`(letrec (b ...)
-              (let-values ([(in^ res) (#,(syntax-local-introduce
-                                          (free-id-table-ref (compiled-ids) #'peg-name))
-                                       in)])
-                (if (failure? in^)
-                    (error 'parse "parse failed")
-                    (parse-result in^ res))))
-          )))
+         (def/stx (b ...)
+           (for/list ([(k v) (in-free-id-table (compiled))])
+             #`(#,(syntax-local-introduce (free-id-table-ref (compiled-ids) k))
+                #,(syntax-local-introduce v))))
+
+         #`(letrec (b ...)
+             (let-values ([(in^ res) (#,(syntax-local-introduce
+                                         (free-id-table-ref (compiled-ids) #'peg-name))
+                                      in)])
+               (if (failure? in^)
+                   (error 'parse "parse failed")
+                   (parse-result in^ res))))
+         ))
      ]))
 
 #|
@@ -395,7 +394,7 @@
          "variables may only be bound within an action (=>) form"
          #f
          #f
-         vs)) 
+         vs))
       (def/stx compiled-e (compile peg-e^ #'in))
       #'(lambda (in)
           compiled-e))]))
