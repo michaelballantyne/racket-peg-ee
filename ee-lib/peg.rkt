@@ -14,12 +14,15 @@
          -let-syntax
          -let
          (rename-out [-seq=> -seq])
-         )
+
+         (for-syntax
+          (rename-out [expand-peg local-expand-peg])
+          peg-literals))
 
 (require
   racket/undefined
   racket/performance-hint
-  
+
   ee-lib/define
   (for-syntax
    racket/match
@@ -66,6 +69,16 @@
 
    -action ; handled by the expander but not present in fully-expanded syntax.
    ))
+
+(module+ core
+  (provide -eps -seq2 -or2 -* -local #%peg-var -let-syntax -let -action/vars
+           -bind -! -dyn
+           define-peg-core
+           parse
+           define-peg-macro
+           (for-syntax
+            expand-peg
+            peg-literals)))
 
 (require (for-syntax syntax/id-table))
 
