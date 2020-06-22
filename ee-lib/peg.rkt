@@ -136,10 +136,10 @@
        (with-scope sc
          (if (identifier? #'e)
              (let ()  ; if it's a rebinding of a simple identifier, substitute and drop the -local
-               (bind! (add-scope #'g sc) #'(make-peg-rename (quote-syntax e)))
+               (bind! (add-scope #'g sc) (make-peg-rename #'e))
                (expand-peg (add-scope #'b sc)))
              (let ()
-               (def/stx g^ (bind! (add-scope #'g sc) #'(parser-binding-rep #f)))
+               (def/stx g^ (bind! (add-scope #'g sc) (parser-binding-rep #f)))
                (define-values (e^ ve) (expand-peg (add-scope #'e sc)))
                (free-id-table-set! (expanded) #'g^ (syntax-local-introduce e^))
                (define-values (b^ vb) (expand-peg (add-scope #'b sc)))
@@ -148,7 +148,7 @@
                (values (qstx/rc (-local [g^ #,e^] #,b^)) vb^))))]
       [(-let-syntax ~! [name:id e] p)
        (with-scope sc
-         (bind! (add-scope #'name sc) #'e)
+         (bind! (add-scope #'name sc) (eval-transformer #'e))
          (expand-peg (add-scope #'p sc)))]
       [(#%peg-var ~! name:id)
        (when (not (parser-binding? (lookup #'name)))
@@ -164,7 +164,7 @@
        (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e^)) '())]
       [(-bind ~! x:id e)
        (define-values (e^ v) (expand-peg #'e))
-       (def/stx x^ (bind! #'x #f))
+       (def/stx x^ (bind! #'x (racket-var)))
        (values
         (qstx/rc (-bind x^ #,e^))
         (cons (syntax-local-introduce-splice #'x^) v))]
@@ -181,10 +181,10 @@
        (with-scope s
          (if (identifier? #'e)
              (let ()
-               (bind! (add-scope #'v s) #'(make-rename-transformer #'e))
+               (bind! (add-scope #'v s) (make-rename-transformer #'e))
                (expand-peg (add-scope #'b s)))
              (let ()
-               (def/stx v^ (bind! (add-scope #'v s) #f))
+               (def/stx v^ (bind! (add-scope #'v s) (racket-var)))
                (def/stx e^ (local-expand #'e 'expression '() (current-def-ctx)))
                (define-values (b^ vs) (expand-peg (add-scope #'b s)))
                (values (qstx/rc (-let [v^ e^] #,b^)) vs))))]
@@ -285,7 +285,7 @@
       (when stx
         (free-id-table-set! table root 'tmp)
 
-        (define-values (expanded vars) (expand-peg (syntax-local-introduce stx)))
+        (define-values (expanded vars) (with-scope sc (expand-peg (syntax-local-introduce stx))))
         (when (not (null? vars))
           (raise-syntax-error #f "peg definition with free binders" stx))
 
