@@ -159,9 +159,10 @@
       ; expansion time we'd get if it were a macro and the expander validated
       ; the var list with -action/vars as the only core form.
       [(~or (-action ~! pe e) (-action/vars (old-vars:id ...) pe e))
-       (define-values (pe^ v) (expand-peg #'pe))
-       (def/stx e^ (local-expand #'e 'expression '() (current-def-ctx)))
-       (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e^)) '())]
+       (with-scope sc
+         (define-values (pe^ v) (expand-peg (add-scope #'pe sc)))
+         (def/stx e^ (local-expand (add-scope #'e sc) 'expression '() (current-def-ctx)))
+         (values (qstx/rc (-action/vars #,(map syntax-local-introduce-splice v) #,pe^ e^)) '()))]
       [(-bind ~! x:id e)
        (define-values (e^ v) (expand-peg #'e))
        (def/stx x^ (bind! #'x (racket-var)))
@@ -229,7 +230,7 @@
            cb)]
       [(#%peg-var name:id)
        (build-compiled-table! #'name)
-       (def/stx f (syntax-local-introduce (free-id-table-ref (compiled-ids) #'name)))
+       (def/stx f (syntax-local-introduce (free-id-table-ref (compiled-ids) #'name (lambda () (error '#%peg-var/compile "no binding: ~a" #'name)))))
        #`(f #,in)]
       [(-action/vars (v ...) pe e)
        (def/stx c (compile #'pe in))
@@ -285,7 +286,9 @@
       (when stx
         (free-id-table-set! table root 'tmp)
 
-        (define-values (expanded vars) (with-scope sc (expand-peg (syntax-local-introduce stx))))
+        ;(displayln `(expanding ,root))
+        (define-values (expanded vars) (expand-peg (syntax-local-introduce stx)))
+        ;(displayln `(done expanding ,root))
         (when (not (null? vars))
           (raise-syntax-error #f "peg definition with free binders" stx))
 
@@ -304,7 +307,9 @@
         (define id (generate-temporary root))
         (free-id-table-set! (compiled-ids) root (syntax-local-introduce id))
 
+        ;(displayln `(compiling ,id))
         (define compiled #`(lambda (in) #,(compile stx #'in)))
+        ;(displayln `(done compiling ,id))
 
         (free-id-table-set! table root (syntax-local-introduce compiled))
         )))
