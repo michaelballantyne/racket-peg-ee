@@ -29,6 +29,10 @@
        (=> (seq (: a (symbol a)) (: d t6))
            (cons a d))))
 
+(define-peg t7
+  (=> (: r (seq (symbol a) (symbol b)))
+      r))
+
 (module+ test
   (require rackunit)
   
@@ -55,4 +59,10 @@
   (check-equal?
    (parse t6 '(a a a b))
    (parse-result '() '(a a a)))
+
+  ; I would like this to error, but would need static analysis rather than
+  ; dynamic behavior to get that result without losing tail recursion on seq.
+  (check-equal?
+   (parse t7 '(a b))
+   (parse-result '() 'b))
   )

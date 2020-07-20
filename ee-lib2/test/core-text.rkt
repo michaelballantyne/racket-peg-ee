@@ -28,6 +28,10 @@
        (=> (seq (: a "a") (: d t6))
            (cons a d))))
 
+(define-peg t7
+  (=> (: r (seq "ab" (seq "c" (* (seq (! "f") (char (lambda (c) #t)))))))
+      r))
+
 (module+ test
   (require rackunit)
   
@@ -54,4 +58,9 @@
   (check-equal?
    (parse-result-value (parse t6 "aaab"))
    '("a" "a" "a"))
+
+  (check-equal?
+   (parse-result-value (parse t7 "abcddf"))
+   "abcdd")
+  
   )

@@ -68,4 +68,5 @@
                     (step-input c (text-rep-ix in) (text-rep-ln in) (text-rep-col in))])
                 (values (text-rep (text-rep-str in) ix ln col) (void)))
               (fail)))
-        (fail))))
+        (fail)))  
+)

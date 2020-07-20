@@ -87,15 +87,20 @@
          (if (failure? in)
              (values #,in (void))
              (fail)))]
-    ; TODO string capture when text
+    ; TODO use a runtime helper to avoid code blowup
     [(: x e)
      (def/stx c (compile-peg #'e in))
-     #`(let-values ([(in res) c])
-         (if (failure? in)
+     #`(let-values ([(in^ res) c])
+         (if (failure? in^)
              (fail)
-             (begin
-               (set! #,(syntax-local-introduce (free-id-table-ref (v-tmps) #'x)) res)
-               (values in (void)))))]
+             (if (and (void? res) (not (text-rep? in^)))
+                 (error ': "missing semantic value")
+                 (begin
+                   (set! #,(syntax-local-introduce (free-id-table-ref (v-tmps) #'x))
+                         (if (not (void? res))
+                             res
+                             (substring (text-rep-str #,in) (text-rep-ix #,in) (text-rep-ix in^))))
+                   (values in^ (void))))))]
     [(=> pe e)
      (def/stx (v* ...) (bound-vars #'pe))
      (def/stx c
