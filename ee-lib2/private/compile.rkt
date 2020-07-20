@@ -1,8 +1,9 @@
 #lang racket/base
 
 (provide
- compile-peg
- compiled-ids)
+ record-compiled-id!
+ compile-def
+ compile-parse)
 
 (require
   syntax/parse
@@ -14,6 +15,11 @@
   (for-template "runtime.rkt"))
 
 (define compiled-ids (make-free-id-table))
+
+(define (record-compiled-id! name compiled-id)
+  (free-id-table-set! compiled-ids
+                      (syntax-local-introduce name)
+                      (syntax-local-introduce compiled-id)))
 
 (define (bound-vars e)
   (syntax-parse e
@@ -117,3 +123,19 @@
      (error 'compile-peg ":src-span not yet supported")]
     [_ (raise-syntax-error #f "not a core peg form" this-syntax)]
     ))
+
+(define (compile-parse peg-name in-e-arg)
+  (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids peg-name)))
+  (def/stx in-e in-e-arg)
+  #'(let ([in (wrap-input in-e)])
+      (let-values ([(in^ res) (f in)])
+        (if (failure? in^)
+            (error 'parse "parse failed")
+            (parse-result in^ res)))))
+
+(define (compile-def peg-name peg-e)
+  (def/stx compiled-e (compile-peg peg-e #'in))
+  (def/stx impl (syntax-local-introduce
+                 (free-id-table-ref compiled-ids
+                                    (syntax-local-introduce peg-name))))
+  #`(define impl (lambda (in) compiled-e)))

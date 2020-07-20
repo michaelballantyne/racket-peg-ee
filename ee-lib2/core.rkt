@@ -1,14 +1,29 @@
-#lang racket
+#lang racket/base
 
 (provide
- (all-from-out "private/forms.rkt")
+ ; core forms
+ eps
+ seq
+ alt
+ *
+ !
+ :
+ =>
+ token
+ text
+ :src-span
 
+ ; interface macros
  define-peg
  parse
- parse-result
 
+ ; default #%peg-datum implementation
  #%peg-datum
 
+ ; result datatype
+ parse-result
+
+ ; interfaces for macro definitions and local-expansion
  (for-syntax
   (rename-out [expand-peg local-expand-peg])
   peg-macro
@@ -19,17 +34,20 @@
 
 (require
   "private/forms.rkt"
-  "private/leftrec-check.rkt"
-  "private/runtime.rkt"
+  (only-in "private/runtime.rkt" parse-result)
   (for-syntax
-   syntax/parse
-   racket/syntax
-   syntax/id-table
-   (rename-in syntax/parse [define/syntax-parse def/stx])
    "private/env-reps.rkt"
    "private/syntax-classes.rkt"
    "private/expand.rkt"
+   "private/leftrec-check.rkt"
    "private/compile.rkt"))
+
+(require
+  (for-syntax
+   racket/base
+   syntax/parse
+   racket/syntax
+   (rename-in syntax/parse [define/syntax-parse def/stx])))
 
 ; Interface macros
 
@@ -40,39 +58,30 @@
        (raise-syntax-error #f "define-peg only works in module context" this-syntax))
      (def/stx impl (generate-temporary #'name))
      (syntax-local-lift-module-end-declaration
-      #'(define-peg-pass2 name peg-e impl))
+      #'(define-peg-pass2 name peg-e))
      #'(begin
          (begin-for-syntax
-           (free-id-table-set! compiled-ids #'name #'impl))
+           (record-compiled-id! #'name #'impl))
          (define-syntax name (parser-binding-rep)))]))
 
 (define-syntax define-peg-pass2
   (syntax-parser
-    [(_ name peg-e impl)
+    [(_ name peg-e)
      (define-values (peg-e^) (expand-peg #'peg-e))
-     (free-id-table-set! expanded-defs (syntax-local-introduce #'name) (syntax-local-introduce peg-e^))
+     (lift-leftrec-check! #'name peg-e^)
      (syntax-local-lift-module-end-declaration
-      #'(check-leftrec))
-     (syntax-local-lift-module-end-declaration
-      #`(define-peg-pass3 name #,peg-e^ impl))
+      #`(define-peg-pass3 name #,peg-e^))
      #'(begin)]))
 
 (define-syntax define-peg-pass3
   (syntax-parser
-    [(_ name peg-e impl)
-     (define compiled-e (compile-peg #'peg-e #'in))
-     #`(define impl (lambda (in) #,compiled-e))]))
-
+    [(_ name peg-e)
+     (compile-def #'name #'peg-e)]))
 
 (define-syntax parse
   (syntax-parser
     [(_ peg-name:nonterm-id in-e:expr)
-     (def/stx f (syntax-local-introduce (free-id-table-ref compiled-ids #'peg-name)))
-     #'(let ([in (wrap-input in-e)])
-         (let-values ([(in^ res) (f in)])
-           (if (failure? in^)
-               (error 'parse "parse failed")
-               (parse-result in^ res))))]))
+     (compile-parse #'peg-name #'in-e)]))
 
 ; Default implementation of #%peg-datum interposition point
 
