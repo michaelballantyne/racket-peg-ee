@@ -2,13 +2,7 @@
 
 (require
   "../core.rkt"
-  (for-syntax syntax/parse))
-
-(define-syntax symbol
-  (peg-macro
-   (syntax-parser
-     [(_ s:id)
-      #'(token (lambda (t) (and (eq? t 's) 's)))])))
+  "../symbol-token.rkt")
 
 (define-peg t1
   (=> (seq (symbol a) (seq (: r (symbol b)) (symbol c)))
