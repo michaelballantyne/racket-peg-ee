@@ -46,7 +46,10 @@
        (values (qstx/rc (=> #,pe^ #,e^))))]
     [(text (~or c:char s:string))
      this-syntax]
-    [(token e:peg)
+    [(char e:expr)
+     (define e^ (local-expand #'e 'expression '() (current-def-ctx)))
+     (values (qstx/rc (char #,e^)))]
+    [(token e:expr)
      (define e^ (local-expand #'e 'expression '() (current-def-ctx)))
      (values (qstx/rc (token #,e^)))]
     [(:src-span v:id ~! e:peg)

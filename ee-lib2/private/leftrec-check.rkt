@@ -34,6 +34,7 @@
      (nullable? #'pe)]
     [(text t) #f]
     [(token f) #f]
+    [(char f) #f]
     [name:id
      (nullable-nonterminal? #'name)]
     [(:src-span v e)

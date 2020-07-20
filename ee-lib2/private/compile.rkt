@@ -96,7 +96,7 @@
              (begin
                (set! #,(syntax-local-introduce (free-id-table-ref (v-tmps) #'x)) res)
                (values in (void)))))]
-    [(=> pe e) ; TODO variable lifting
+    [(=> pe e)
      (def/stx (v* ...) (bound-vars #'pe))
      (def/stx c
        (parameterize ([v-tmps (for/fold ([t (make-immutable-free-id-table)])
@@ -109,8 +109,10 @@
                (fail)
                (let ([res e])
                  (values in res)))))]
-    [(text t)
-     (error 'compile-peg "text not yet supported")]
+    [(text s:string)
+     #`(string-rt s #,in)]
+    [(char f)
+     #`(char-pred-rt f #,in)]
     [(token f) ; TODO probably needs a contract check
      #`(token-pred-rt f #,in)]
     [name:id

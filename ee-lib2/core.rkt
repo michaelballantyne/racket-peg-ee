@@ -11,6 +11,7 @@
  =>
  token
  text
+ char
  :src-span
 
  ; interface macros
@@ -21,7 +22,7 @@
  #%peg-datum
 
  ; result datatype
- parse-result
+ (struct-out parse-result)
 
  ; interfaces for macro definitions and local-expansion
  (for-syntax
@@ -34,7 +35,7 @@
 
 (require
   "private/forms.rkt"
-  (only-in "private/runtime.rkt" parse-result)
+  "private/runtime.rkt"
   (for-syntax
    "private/env-reps.rkt"
    "private/syntax-classes.rkt"

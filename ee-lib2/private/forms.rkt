@@ -20,6 +20,7 @@
    :
    =>
    text
+   char
    token  ; semantics in the paper isn't enough, because it needs to support values and srclocs too.
    :src-span
    ))
