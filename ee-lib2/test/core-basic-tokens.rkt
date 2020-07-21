@@ -21,7 +21,7 @@
       (list a b)))
 
 (define-peg t5
-  (=> (* (seq (seq (! (symbol b)) (: c (token (lambda (t) t)))) eps))
+  (=> (* (seq (seq (! (symbol b)) (: c (token (lambda (t) (values t #f))))) eps))
       c))
 
 (define-peg t6

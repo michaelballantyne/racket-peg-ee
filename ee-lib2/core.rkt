@@ -21,6 +21,7 @@
  ; default #%peg-datum implementation
  #%peg-datum
 
+ make-text
  ; result datatype
  (struct-out parse-result)
 

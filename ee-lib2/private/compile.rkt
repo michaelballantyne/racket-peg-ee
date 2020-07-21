@@ -33,7 +33,7 @@
     [(* e)
      (bound-vars #'e)]
     [(:src-span v e)
-     (bound-vars #'e)]
+     (cons #'v (bound-vars #'e))]
     [_ '()]))
 
 (define v-tmps (make-parameter #f))
@@ -87,7 +87,7 @@
          (if (failure? in)
              (values #,in (void))
              (fail)))]
-    ; TODO use a runtime helper to avoid code blowup
+    ; TODO use a runtime helper?
     [(: x e)
      (def/stx c (compile-peg #'e in))
      #`(let-values ([(in^ res) c])
@@ -127,7 +127,11 @@
                   (lambda () (error 'compile-peg "no compiled id for: ~a" #'name)))))
      #`(f #,in)]
     [(:src-span v e)
-     (error 'compile-peg ":src-span not yet supported")]
+     (def/stx c (compile-peg #'e in))
+     #`(let-values ([(in^ res tmp) (src-span-rt (lambda (in) c) #,in)])
+         (set! #,(syntax-local-introduce (free-id-table-ref (v-tmps) #'v))
+               tmp)
+         (values in^ res))]
     [_ (raise-syntax-error #f "not a core peg form" this-syntax)]
     ))
 

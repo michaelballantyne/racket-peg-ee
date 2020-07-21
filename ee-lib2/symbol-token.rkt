@@ -10,4 +10,5 @@
   (peg-macro
    (syntax-parser
      [(_ s:id)
-      #'(token (lambda (t) (and (eq? t 's) 's)))])))
+      #'(token (lambda (t)
+                 (values (and (eq? t 's) t) #f)))])))
