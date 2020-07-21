@@ -1,7 +1,8 @@
 #lang racket/base
 
 (provide
- lift-leftrec-check!)
+ lift-leftrec-check!
+ expanded-defs)
 
 (require
   syntax/id-table

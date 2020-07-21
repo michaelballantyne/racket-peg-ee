@@ -49,6 +49,7 @@
    racket/base
    syntax/parse
    racket/syntax
+   syntax/id-table
    (rename-in syntax/parse [define/syntax-parse def/stx])))
 
 ; Interface macros
@@ -62,6 +63,7 @@
      (syntax-local-lift-module-end-declaration
       #'(define-peg-pass2 name peg-e))
      #'(begin
+         (define impl (define-peg-rhs name))
          (begin-for-syntax
            (record-compiled-id! #'name #'impl))
          (define-syntax name (parser-binding-rep)))]))
@@ -71,14 +73,13 @@
     [(_ name peg-e)
      (define-values (peg-e^) (expand-peg #'peg-e))
      (lift-leftrec-check! #'name peg-e^)
-     (syntax-local-lift-module-end-declaration
-      #`(define-peg-pass3 name #,peg-e^))
      #'(begin)]))
 
-(define-syntax define-peg-pass3
+(define-syntax define-peg-rhs
   (syntax-parser
-    [(_ name peg-e)
-     (compile-def #'name #'peg-e)]))
+    [(_ name)
+     (define e (free-id-table-ref expanded-defs (syntax-local-introduce #'name)))
+     #`(lambda (in) #,(compile-peg e #'in))]))
 
 (define-syntax parse
   (syntax-parser

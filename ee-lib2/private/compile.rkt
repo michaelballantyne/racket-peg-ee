@@ -2,7 +2,7 @@
 
 (provide
  record-compiled-id!
- compile-def
+ compile-peg
  compile-parse)
 
 (require
@@ -143,10 +143,3 @@
         (if (failure? in^)
             (error 'parse "parse failed")
             (parse-result in^ res)))))
-
-(define (compile-def peg-name peg-e)
-  (def/stx compiled-e (compile-peg peg-e #'in))
-  (def/stx impl (syntax-local-introduce
-                 (free-id-table-ref compiled-ids
-                                    (syntax-local-introduce peg-name))))
-  #`(define impl (lambda (in) compiled-e)))
