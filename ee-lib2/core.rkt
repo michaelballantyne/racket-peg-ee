@@ -49,24 +49,26 @@
    racket/base
    syntax/parse
    racket/syntax
+   ee-lib
    syntax/id-table
    (rename-in syntax/parse [define/syntax-parse def/stx])))
 
 ; Interface macros
 
 (define-syntax define-peg
-  (syntax-parser
-    [(_ name:id peg-e:peg)
-     (when (not (eq? 'module (syntax-local-context)))
-       (raise-syntax-error #f "define-peg only works in module context" this-syntax))
-     (def/stx impl (generate-temporary #'name))
-     (syntax-local-lift-module-end-declaration
-      #'(define-peg-pass2 name peg-e))
-     #'(begin
-         (define impl (define-peg-rhs name))
-         (begin-for-syntax
-           (record-compiled-id! #'name #'impl))
-         (define-syntax name (parser-binding-rep)))]))
+  (module-macro
+    (syntax-parser
+      [(_ name:id peg-e:peg)
+       (when (not (eq? 'module (syntax-local-context)))
+         (raise-syntax-error #f "define-peg only works in module context" this-syntax))
+       (def/stx impl (generate-temporary #'name))
+       (syntax-local-lift-module-end-declaration
+        #'(define-peg-pass2 name peg-e))
+       #'(begin
+           (define impl (define-peg-rhs name))
+           (begin-for-syntax
+             (record-compiled-id! #'name #'impl))
+           (define-syntax name (parser-binding-rep)))])))
 
 (define-syntax define-peg-pass2
   (syntax-parser
@@ -82,9 +84,10 @@
      #`(lambda (in) #,(compile-peg e #'in))]))
 
 (define-syntax parse
-  (syntax-parser
-    [(_ peg-name:nonterm-id in-e:expr)
-     (compile-parse #'peg-name #'in-e)]))
+  (expression-macro
+    (syntax-parser
+      [(_ peg-name:nonterm-id in-e:expr)
+       (compile-parse #'peg-name #'in-e)])))
 
 ; Default implementation of #%peg-datum interposition point
 
