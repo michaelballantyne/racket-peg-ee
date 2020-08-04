@@ -15,6 +15,7 @@
   (eps
    seq
    alt
+   alt-strs
    *
    !
    :

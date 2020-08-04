@@ -26,6 +26,8 @@
     [(alt e1 e2)
      (or (nullable? #'e1)
          (nullable? #'e2))]
+    [(alt-strs s:string ...)
+     #f]
     [(* e) #t]
     [(! e)
      (not (nullable? #'e))]

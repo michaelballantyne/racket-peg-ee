@@ -44,6 +44,8 @@
        (define-values (pe^) (expand-peg (add-scope #'pe sc)))
        (define e^ (local-expand (add-scope #'e sc) 'expression '() (current-def-ctx)))
        (values (qstx/rc (=> #,pe^ #,e^))))]
+    [(alt-strs s:string ...+)
+     this-syntax]
     [(text (~or c:char s:string))
      this-syntax]
     [(char e:expr)

@@ -24,6 +24,17 @@
     [(? text-rep?) in]
     [_ (raise-argument-error 'parse "(or/c string? list?)" in)]))
 
+(define (step-input* in count)
+    (define s (text-rep-str in))
+    (let loop ([count count]
+               [ix (text-rep-ix in)]
+               [ln (text-rep-ln in)]
+               [col (text-rep-col in)])
+      (if (> count 0)
+          (let-values ([(ix^ ln^ col^) (step-input (string-ref s ix) ix ln col)])
+            (loop (- count 1) ix^ ln col^))
+          (text-rep s (text-rep-source in) ix ln col))))
+
 (begin-encourage-inline
   (define (fail) (values the-failure (void)))
 

@@ -12,7 +12,8 @@
   ee-lib
   (for-template (except-in racket/base => *))
   (for-template "forms.rkt")
-  (for-template "runtime.rkt"))
+  (for-template "runtime.rkt")
+  "compile-alt-str.rkt")
 
 (define compiled-ids (make-free-id-table))
 
@@ -57,6 +58,8 @@
          (if (failure? in^)
              c2
              (values in^ res)))]
+    [(alt-strs ~! s:string ...)
+     (compile-alt-str (syntax->datum #'(s ...)) in)]
     [(* e)
      (def/stx (v* ...) (bound-vars #'e))
      (def/stx (outer-v* ...) (for/list ([v (attribute v*)])
