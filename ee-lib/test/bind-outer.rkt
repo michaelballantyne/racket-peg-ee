@@ -16,6 +16,7 @@
   (=> p (list v 'b)))
 
 (define-peg test2
-  (-debug-expand (-left [a (=> #\a 'a)] (helper #\b & (list a)))))
+  (=> (helper (-bind a (=> #\a 'a)) & 5)
+      a)) ; doesn't currently bind... I think I intended this to, at one point.
 
-(parse test2 (text "ab"))
+(parse test2 (text "a"))
