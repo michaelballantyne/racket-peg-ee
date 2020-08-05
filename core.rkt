@@ -32,7 +32,8 @@
   gen:peg-macro
   peg-macro?
   peg-macro/c
-  peg-macro-transform))
+  peg-macro-transform
+  peg))
 
 (require
   "private/forms.rkt"
