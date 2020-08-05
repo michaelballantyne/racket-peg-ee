@@ -2,7 +2,7 @@
 
 (require
   "../core.rkt"
-  "../symbol-token.rkt")
+  "../simple-tokens.rkt")
 
 (define-peg t1
   (=> (seq (symbol a) (seq (: r (symbol b)) (symbol c)))

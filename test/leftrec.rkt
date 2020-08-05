@@ -20,14 +20,14 @@
   (module ex racket/base
     (require
       "../core.rkt"
-      "../symbol-token.rkt")
+      "../simple-tokens.rkt")
 
     ; Check that nullability information from earlier modules is available
     ; to later modules.
     (module pre racket/base
       (require
         "../core.rkt"
-        "../symbol-token.rkt")
+        "../simple-tokens.rkt")
 
       (provide term)
 

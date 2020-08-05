@@ -1,8 +1,7 @@
 #lang racket
 
 (require
-  "../core.rkt"
-  "../symbol-token.rkt")
+  "../core.rkt")
 
 (define-peg t1
   (=> (seq "a\n" (: r "b"))

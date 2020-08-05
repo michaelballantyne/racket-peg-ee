@@ -2,7 +2,6 @@
 
 (require
   "../core.rkt"
-  "../symbol-token.rkt"
   syntax/srcloc
   (for-syntax syntax/parse))
 
