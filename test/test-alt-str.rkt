@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../core.rkt")
+(require "../core.rkt" (only-in "../private/forms.rkt" alt-strs))
 
 (define-peg p1
   (alt "<" (alt ">" (alt "==" (alt ">=" (alt "<=" (alt "!=" "in")))))))
