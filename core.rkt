@@ -27,7 +27,7 @@
 
  ; interfaces for macro definitions and local-expansion
  (for-syntax
-  (rename-out [expand-peg local-expand-peg])
+  local-expand-peg
   peg-macro
   gen:peg-macro
   peg-macro?

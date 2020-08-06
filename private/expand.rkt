@@ -1,7 +1,8 @@
 #lang racket/base
 
 (provide
- expand-peg)
+ expand-peg
+ local-expand-peg)
 
 (require
   ee-lib
@@ -9,6 +10,10 @@
   (for-template "forms.rkt")
   "env-reps.rkt"
   "syntax-classes.rkt")
+
+(define (local-expand-peg stx)
+  (with-scope sc
+    (expand-peg stx)))
 
 ; (-> syntax? (values syntax?))
 (define/hygienic (expand-peg stx) #:definition
