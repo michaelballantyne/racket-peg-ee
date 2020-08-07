@@ -1,41 +1,41 @@
 #lang racket
 
-(require
-  "../core.rkt"
-  "../simple-tokens.rkt")
+(require "../main.rkt")
+
+(use-literal-token-interpretation symbol-token)
 
 (define-peg t1
-  (=> (seq (symbol a) (seq (: r (symbol b)) (symbol c)))
+  (=> (seq "a" (seq (: r "b") "c"))
       5))
 
 (define-peg t2
-  (=> (* (: r (symbol a)))
+  (=> (* (: r "a"))
       r))
 
 (define-peg t3
-  (=> (* (seq (symbol a) (* (: r (symbol b)))))
+  (=> (* (seq "a" (* (: r "b"))))
       r))
 
 (define-peg t4
-  (=> (alt (: a (symbol a)) (: b (symbol b)))
+  (=> (alt (: a "a") (: b "b"))
       (list a b)))
 
 (define-peg t5
-  (=> (* (seq (seq (! (symbol b)) (: c (token (lambda (t) (values t #f))))) eps))
+  (=> (* (seq (seq (! "b") (: c (token (lambda (t) (values t #f))))) eps))
       c))
 
 (define-peg t6
-  (alt (=> (symbol b) '())
-       (=> (seq (: a (symbol a)) (: d t6))
+  (alt (=> "b" '())
+       (=> (seq (: a "a") (: d t6))
            (cons a d))))
 
 (define-peg t7
-  (=> (: r (seq (symbol a) (symbol b)))
+  (=> (: r (seq "a" "b"))
       r))
 
 (module+ test
   (require rackunit)
-  
+
   (check-equal?
    (parse t1 '(a b c d))
    (parse-result '(d) 5))

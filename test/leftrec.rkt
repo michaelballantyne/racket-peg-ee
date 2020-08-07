@@ -18,20 +18,15 @@
 (test-error
   #rx"arith-expr-leftrec: left recursion through nonterminal"
   (module ex racket/base
-    (require
-      "../core.rkt"
-      "../simple-tokens.rkt")
+    (require "../main.rkt")
 
     ; Check that nullability information from earlier modules is available
     ; to later modules.
     (module pre racket/base
-      (require
-        "../core.rkt"
-        "../simple-tokens.rkt")
-
+      (require "../main.rkt")
       (provide term)
 
-      (define-peg term (symbol term)))
+      (define-peg term "term"))
 
     (require 'pre)
 
@@ -41,6 +36,6 @@
                 (alt term
                      (=> (seq (: e1 arith-expr-leftrec)
                               (seq
-                                (: op (alt (symbol +) (symbol -)))
+                                (: op (alt "+" "-"))
                                 (: e2 term)))
                          (binop-ast e1 op e2))))))
