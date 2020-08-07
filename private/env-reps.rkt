@@ -4,9 +4,9 @@
 
 (require racket/generic)
 
-(define-generics parser-binding)
-(struct parser-binding-rep ()
-  #:methods gen:parser-binding [])
+(define-generics peg-non-terminal)
+(struct peg-non-terminal-rep ()
+  #:methods gen:peg-non-terminal [])
 
 (define-generics peg-macro
   (peg-macro-transform peg-macro stx))

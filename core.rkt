@@ -70,7 +70,7 @@
            (define impl (define-peg-rhs name))
            (begin-for-syntax
              (record-compiled-id! #'name #'impl))
-           (define-syntax name (parser-binding-rep)))])))
+           (define-syntax name (peg-non-terminal-rep)))])))
 
 (define-syntax define-peg-pass2
   (syntax-parser
