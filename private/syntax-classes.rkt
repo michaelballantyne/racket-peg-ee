@@ -15,5 +15,5 @@
   #:description "PEG non-terminal name"
   (pattern n:id
            #:fail-unless
-           (not (eq? unbound (lookup #'n parser-binding?)))
+           (not (eq? unbound (lookup #'n peg-non-terminal?)))
            "not bound as a peg"))
