@@ -83,7 +83,8 @@
   (syntax-parser
     [(_ name)
      (define e (free-id-table-ref expanded-defs (syntax-local-introduce #'name)))
-     #`(lambda (in) #,(compile-peg e #'in))]))
+     (define e^ (compile-peg e #'in))
+     #`(lambda (in) #,e^)]))
 
 (define-syntax parse
   (expression-macro

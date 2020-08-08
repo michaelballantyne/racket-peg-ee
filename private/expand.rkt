@@ -28,6 +28,10 @@
      (define/syntax-parse e1^ (expand-peg #'e1))
      (define/syntax-parse e2^ (expand-peg #'e2))
      #'(alt e1^ e2^)]
+    [(plain-alt ~! e1:peg e2:peg)
+     (define/syntax-parse e1^ (expand-peg #'e1))
+     (define/syntax-parse e2^ (expand-peg #'e2))
+     #'(plain-alt e1^ e2^)]
     [(* ~! e:peg)
      (define/syntax-parse e^ (expand-peg #'e))
      #'(* e^)]
@@ -48,8 +52,6 @@
        (define/syntax-parse pe^ (expand-peg (add-scope #'pe sc)))
        (define/syntax-parse e^ (local-expand (add-scope #'e sc) 'expression '() (current-def-ctx)))
        #'(=> pe^ e^))]
-    [(alt-strs s:string ...+)
-     this-syntax]
     [(text (~or c:char s:string))
      this-syntax]
     [(char e:expr)

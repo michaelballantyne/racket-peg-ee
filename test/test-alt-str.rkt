@@ -1,14 +1,15 @@
 #lang racket
 
-(require "../core.rkt" (only-in "../private/forms.rkt" alt-strs))
+(require "../main.rkt"
+         (only-in "../private/forms.rkt" plain-alt))
 
 (define-peg p1
-  (alt "<" (alt ">" (alt "==" (alt ">=" (alt "<=" (alt "!=" "in")))))))
+  (plain-alt "==" (plain-alt ">=" (plain-alt "<=" (plain-alt "<" (plain-alt ">" (plain-alt "!=" (plain-alt "in" (seq "not" " " "in")))))))))
 
 (define-peg p2
-  (alt-strs "==" ">=" "<=" "<" ">" "!=" "in"))
+  (alt "==" ">=" "<=" "<" ">" "!=" "in" (seq "not" " " "in")))
 
-(define times 1000000)
+(define times 10000000)
 
 (time
  (for ([n (in-range times)])

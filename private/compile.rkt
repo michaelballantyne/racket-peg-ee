@@ -39,6 +39,13 @@
 
 (define v-tmps (make-parameter #f))
 
+(define (generate-plain-alt c1 c2)
+  #`(let-values ([(in^ res) #,c1])
+         (if (failure? in^)
+             #,c2
+             (values in^ res))))
+
+
 (define/hygienic (compile-peg stx in) #:expression
   (syntax-parse stx
     #:literal-sets (peg-literals)
@@ -51,15 +58,12 @@
          (if (failure? in^)
              (fail)
              c2))]
-    [(alt e1 e2)
+    [(plain-alt e1 e2)
      (def/stx c1 (compile-peg #'e1 in))
      (def/stx c2 (compile-peg #'e2 in))
-     #'(let-values ([(in^ res) c1])
-         (if (failure? in^)
-             c2
-             (values in^ res)))]
-    [(alt-strs ~! s:string ...)
-     (compile-alt-str (syntax->datum #'(s ...)) in)]
+     (generate-plain-alt #'c1 #'c2)]
+    [(alt e1 e2)
+     (optimize+compile-alts this-syntax in compile-peg generate-plain-alt)]
     [(* e)
      (def/stx (v* ...) (bound-vars #'e))
      (def/stx (outer-v* ...) (for/list ([v (attribute v*)])

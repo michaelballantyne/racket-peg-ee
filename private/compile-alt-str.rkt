@@ -3,10 +3,55 @@
 (require
   syntax/parse
   racket/list
+  racket/dict
   racket/match
-  (for-template racket/base "runtime.rkt"))
+  (for-template "forms.rkt")
+  (for-template (except-in racket/base => *) "runtime.rkt"))
 
-(provide compile-alt-str)
+(provide optimize+compile-alts)
+
+(define (flatten-alternatives stx)
+  (define alts '())
+  (define (add-alt! alt)
+    (set! alts (cons alt alts)))
+  (let rec ([stx stx])
+    (syntax-parse stx #:literal-sets (peg-literals)
+      [(alt e1 e2)
+       (rec #'e1)
+       (rec #'e2)]
+      [_ (add-alt! stx)]))
+  (reverse alts))
+
+(define (generate-right-associative-plain-alt alternatives)
+  (match alternatives
+    [(list a) a]
+    [(list-rest head rest)
+     #`(plain-alt #,head #,(generate-right-associative-plain-alt rest))]))
+
+(define (split-text-alternatives alts)
+  (splitf-at
+    alts
+    (lambda (stx)
+      (syntax-parse stx #:literal-sets (peg-literals)
+        [(text s) #t]
+        [_ #f]))))
+
+(define (optimize+compile-alts stx in-id compile generate-plain-alt)
+  (define-values (text-alternatives other-alternatives) (split-text-alternatives (flatten-alternatives stx)))
+
+  (define text-peg
+    (and (not (null? text-alternatives))
+         (compile-alt-str (map (syntax-parser #:literal-sets (peg-literals) [(text s) (syntax-e #'s)]) text-alternatives) in-id)))
+
+  (define other-peg
+    (and (not (null? other-alternatives))
+         (compile (generate-right-associative-plain-alt other-alternatives) in-id)))
+
+  (cond
+    [(and text-peg other-peg)
+     (generate-plain-alt text-peg other-peg)]
+    [text-peg text-peg]
+    [else other-peg]))
 
 (define (compile-alt-str alternatives in-id)
   #`(let ([s (text-rep-str #,in-id)]
@@ -41,9 +86,9 @@
            #`(succeed #,offset)
            #`(fail)))
      (define cases
-       (for/list ([(c c-alts) (derive non-empty)])
+       (for/list ([(c c-alts) (in-dict (sort (hash->list (derive non-empty)) char<? #:key car))])
          #`[#,c #,(gen-body c-alts (+ 1 offset) in-id)]))
-    
+
      #`(if (has-c #,offset)
            (char-case (c #,offset)
                       #,@cases
