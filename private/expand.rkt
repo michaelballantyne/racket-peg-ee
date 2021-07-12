@@ -69,7 +69,11 @@
     [(~or head:id (head:id . rest))
      #:do [(define binding (lookup #'head peg-macro?))]
      #:when binding
-     (expand-peg (peg-macro-transform binding stx))]
+     (expand-peg
+      (apply-as-transformer (lambda (stx) (peg-macro-transform binding stx))
+                              #'head
+                              'expression
+                              stx))]
 
     ; Introduce #%peg-datum implicit
     [(~or d:char d:string d:number)
