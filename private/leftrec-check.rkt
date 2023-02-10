@@ -15,6 +15,7 @@
 (define expanded-defs (make-free-id-table))
 (define checked-leftrec #f)
 (define-persistent-free-id-table def-nullable?)
+(define entered (make-free-id-table))
 
 (define (nullable? stx)
   (syntax-parse stx
@@ -46,33 +47,31 @@
     [_ (raise-syntax-error #f "not a core peg form" this-syntax)]))
 
 (define (nullable-nonterminal? id)
-  (case (persistent-free-id-table-ref def-nullable? id (lambda () 'unvisited))
+  (case (or (persistent-free-id-table-ref def-nullable? id (lambda () #f)) (free-id-table-ref entered id (lambda () #f)) 'unvisited)
     [(nullable) #t]
     [(not-nullable) #f]
     [(entered) (raise-syntax-error #f "left recursion through nonterminal" id)]
     [(unvisited)
-     (persistent-free-id-table-set! def-nullable? id 'entered)
+     (free-id-table-set! entered id 'entered)
      (define res (nullable? (free-id-table-ref expanded-defs id)))
      (persistent-free-id-table-set! def-nullable? id (if res 'nullable 'not-nullable))
      res]))
 
 (define (check-leftrec)
-  (define (check!)
+  (when (not checked-leftrec)
     (for ([(k v) (in-free-id-table expanded-defs)])
-      (nullable-nonterminal? k))
-    (persist-free-id-table-extensions! def-nullable?))
-  (if checked-leftrec
-      #'(begin)
-      (check!)))
+      (nullable-nonterminal? k))))
 
 
 (module apply-for-syntax racket/base
-  (require (for-syntax racket/base syntax/parse racket/syntax))
+  (require (for-syntax racket/base syntax/parse racket/syntax ee-lib/persistent-id-table))
   (provide apply-for-syntax)
   (define-syntax apply-for-syntax
-    (syntax-parser
-      [(_ id)
-       ((syntax-local-eval #'id))])))
+    (wrap-persist
+      (syntax-parser
+        [(_ id)
+         ((syntax-local-eval #'id))
+         #'(begin)]))))
 (require (for-template 'apply-for-syntax))
 
 (define (lift-leftrec-check! name rhs)
